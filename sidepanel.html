@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Sidebar</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Top Context Bar -->
+    <div id="context-bar-container">
+      <div id="context-bar">
+        <!-- Context buttons will be injected here -->
+      </div>
+      <button id="add-context-btn" title="新建聊天">+</button>
+    </div>
+
+    <!-- Chat Area -->
+    <div id="chat-container">
+      <!-- Messages will be injected here -->
+      <div class="welcome-message">请选择或新建一个聊天上下文开始。</div>
+    </div>
+
+    <!-- Bottom Input Area -->
+    <div id="input-area-wrapper">
+      <div id="input-controls">
+        <button id="config-btn" class="text-btn">API配置</button>
+        <select id="model-select">
+          <option value="" disabled selected>选择模型...</option>
+        </select>
+        <button id="thinking-toggle-btn" class="toggle-btn" title="NVIDIA 思考参数 (OFF=关闭, ON=自动)">OFF</button>
+        <button id="clear-btn" class="text-btn" title="清空当前上下文消息">清空</button>
+      </div>
+      <div id="input-box-container">
+        <textarea id="chat-input" placeholder="输入消息... (Shift+Enter 换行)" rows="1"></textarea>
+        <button id="send-btn">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Config Modal -->
+  <div id="api-config-modal" class="modal hidden">
+    <div class="modal-content wide-modal">
+      <div class="modal-header">
+        <h3>大模型 API 配置</h3>
+        <button class="close-modal-btn">&times;</button>
+      </div>
+      <div class="modal-body api-config-layout">
+        <div class="api-sidebar">
+           <div class="sidebar-header">供应商列表</div>
+           <div id="providers-list">
+             <!-- List items -->
+           </div>
+           <button id="add-provider-btn" class="secondary-btn full-width">添加供应商</button>
+        </div>
+        <div class="api-details">
+           <div id="provider-form">
+               <!-- Form fields injected by JS -->
+               <div class="empty-state">请选择左侧供应商进行编辑</div>
+           </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-api-config-btn" class="primary-btn">保存当前修改</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Config Modal -->
+  <div id="context-config-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>上下文配置</h3>
+        <button class="close-modal-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="ctx-name">名称</label>
+          <input type="text" id="ctx-name">
+        </div>
+        <div class="form-group">
+          <label for="ctx-system-prompt">系统提示词</label>
+          <textarea id="ctx-system-prompt" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="ctx-max-history">消息数量上限 (0为不限)</label>
+          <input type="number" id="ctx-max-history" min="0" value="0">
+        </div>
+        <div class="form-group">
+          <label for="ctx-temperature">Temperature</label>
+          <input type="number" id="ctx-temperature" min="0" max="2" step="0.1" value="0.7">
+        </div>
+        <div class="form-group">
+          <label for="ctx-top-p">Top P</label>
+          <input type="number" id="ctx-top-p" min="0" max="1" step="0.1" value="1.0">
+        </div>
+        <div class="form-group">
+          <label for="ctx-params">其他参数 (JSON)</label>
+          <textarea id="ctx-params" rows="2" placeholder='{"thinking": {"budget_tokens": 1024}}'></textarea>
+        </div>
+        <div class="form-actions">
+           <button id="export-data-btn" class="secondary-btn">导出所有配置</button>
+           <input type="file" id="import-file" style="display:none" accept=".json">
+           <button id="import-data-btn" class="secondary-btn">导入配置</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-context-config-btn" class="primary-btn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Selection Modal -->
+  <div id="model-selection-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>选择要添加的模型</h3>
+        <button class="close-modal-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="model-checkbox-list" class="checkbox-list">
+           <!-- checkboxes -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="confirm-model-selection-btn" class="primary-btn">添加选中模型</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Right Click Menu -->
+  <div id="context-menu" class="context-menu hidden">
+    <div class="menu-item" data-action="edit">编辑</div>
+    <div class="menu-item" data-action="delete">删除</div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
