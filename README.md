@@ -159,14 +159,13 @@ MIT
 ### v1.1 (2026-02-25)
 
 #### Added
-- Enhanced chat functionality with improved message handling
-- New UI elements and styling improvements
-- Extended features in sidepanel.html
+- **Multilingual Support**: Added support for English, Chinese (中文), and Spanish (Español)
+- Language selector in the UI for easy switching between languages
+- Full translation of all UI elements and messages
 
 #### Changed
-- Updated script.js with additional features (+288 lines)
-- Improved styles.css with new design elements (+64 lines)
-- Enhanced sidepanel.html structure (+27 lines)
+- Updated README with multilingual documentation
+- Enhanced user interface for language switching
 
 ### v1.0 (2026-02-25)
 
