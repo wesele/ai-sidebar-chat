@@ -1,5 +1,8 @@
 # AI Sidebar Chat
 
+[![Version](https://img.shields.io/badge/version-1.1-blue.svg)](https://github.com/wesele/ai-sidebar-chat/releases/tag/v1.1)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 [English](#english) | [中文](#中文) | [Español](#español)
 
 ---
@@ -148,3 +151,26 @@ Una extensión de barra lateral de chat con IA estilo Gemini para Chrome (Manife
 ### Licencia
 
 MIT
+
+---
+
+## Changelog
+
+### v1.1 (2026-02-25)
+
+#### Added
+- Enhanced chat functionality with improved message handling
+- New UI elements and styling improvements
+- Extended features in sidepanel.html
+
+#### Changed
+- Updated script.js with additional features (+288 lines)
+- Improved styles.css with new design elements (+64 lines)
+- Enhanced sidepanel.html structure (+27 lines)
+
+### v1.0 (2026-02-25)
+
+- Initial release
+- Basic sidebar chat interface
+- AI-powered conversation support
+- Persistent storage for chat history

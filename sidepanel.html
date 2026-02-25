@@ -14,6 +14,7 @@
         <!-- Context buttons will be injected here -->
       </div>
       <button id="add-context-btn" title="新建聊天">+</button>
+      <button id="language-btn" class="language-btn" title="选择语言">🌐</button>
     </div>
 
     <!-- Chat Area -->
@@ -133,6 +134,32 @@
   <div id="context-menu" class="context-menu hidden">
     <div class="menu-item" data-action="edit">编辑</div>
     <div class="menu-item" data-action="delete">删除</div>
+  </div>
+
+  <!-- Language Selection Modal -->
+  <div id="language-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>选择语言 / Select Language / Seleccionar Idioma</h3>
+        <button class="close-modal-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="language-options" class="language-options">
+          <button class="language-option" data-lang="en">
+            <span class="lang-flag">🇺🇸</span>
+            <span class="lang-name">English</span>
+          </button>
+          <button class="language-option" data-lang="zh-CN">
+            <span class="lang-flag">🇨🇳</span>
+            <span class="lang-name">中文</span>
+          </button>
+          <button class="language-option" data-lang="es">
+            <span class="lang-flag">🇪🇸</span>
+            <span class="lang-name">Español</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="script.js"></script>

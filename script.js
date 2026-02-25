@@ -36,6 +36,220 @@ const DEFAULT_PROVIDER = {
   models: ['llama3', 'mistral', 'qwen2']
 };
 
+// Translations
+const translations = {
+  'en': {
+    welcome: 'Select or create a chat context to start.',
+    newChat: 'New Chat',
+    apiConfig: 'API Config',
+    selectModel: 'Select model...',
+    thinkingToggle: 'NVIDIA Thinking (OFF=off, ON=auto)',
+    clear: 'Clear',
+    inputPlaceholder: 'Enter message... (Shift+Enter for new line)',
+    send: 'Send',
+    modelApiConfig: 'Model API Configuration',
+    providersList: 'Providers List',
+    addProvider: 'Add Provider',
+    saveCurrentChanges: 'Save Current Changes',
+    contextConfig: 'Context Configuration',
+    name: 'Name',
+    systemPrompt: 'System Prompt',
+    maxHistory: 'Max messages (0=unlimited)',
+    temperature: 'Temperature',
+    topP: 'Top P',
+    otherParams: 'Other params (JSON)',
+    exportAll: 'Export All Config',
+    importConfig: 'Import Config',
+    save: 'Save',
+    selectModelToAdd: 'Select models to add',
+    addSelectedModels: 'Add Selected Models',
+    edit: 'Edit',
+    delete: 'Delete',
+    selectLanguage: 'Select Language',
+    emptyState: 'Select a provider from the left to edit',
+    confirmDeleteContext: 'Delete this chat?',
+    confirmClearHistory: 'Clear all chat history?',
+    keepOneContext: 'Must keep at least one chat context',
+    confirmDeleteProvider: 'Delete this provider?',
+    connecting: 'Connecting...',
+    connectionSuccessNoModels: 'Connection successful, but no models found.',
+    connectionSuccessWrongFormat: 'Connection successful, but response format is unexpected.',
+    connectionFailed: 'Connection failed: ',
+    stop: 'Stop',
+    send: 'Send'
+  },
+  'zh-CN': {
+    welcome: '请选择或新建一个聊天上下文开始。',
+    newChat: '新聊天',
+    apiConfig: 'API配置',
+    selectModel: '选择模型...',
+    thinkingToggle: 'NVIDIA 思考参数 (OFF=关闭, ON=自动)',
+    clear: '清空',
+    inputPlaceholder: '输入消息... (Shift+Enter 换行)',
+    send: '发送',
+    modelApiConfig: '大模型 API 配置',
+    providersList: '供应商列表',
+    addProvider: '添加供应商',
+    saveCurrentChanges: '保存当前修改',
+    contextConfig: '上下文配置',
+    name: '名称',
+    systemPrompt: '系统提示词',
+    maxHistory: '消息数量上限 (0为不限)',
+    temperature: 'Temperature',
+    topP: 'Top P',
+    otherParams: '其他参数 (JSON)',
+    exportAll: '导出所有配置',
+    importConfig: '导入配置',
+    save: '保存',
+    selectModelToAdd: '选择要添加的模型',
+    addSelectedModels: '添加选中模型',
+    edit: '编辑',
+    delete: '删除',
+    selectLanguage: '选择语言',
+    emptyState: '请选择左侧供应商进行编辑',
+    confirmDeleteContext: '删除此对话？',
+    confirmClearHistory: '确定清空当前对话历史吗？',
+    keepOneContext: '至少保留一个聊天上下文',
+    confirmDeleteProvider: '删除此供应商？',
+    connecting: '连接中...',
+    connectionSuccessNoModels: '连接成功，但未找到模型数据。',
+    connectionSuccessWrongFormat: '连接成功，但返回格式不符合预期。',
+    connectionFailed: '连接失败: ',
+    stop: '停止',
+    send: '发送'
+  },
+  'es': {
+    welcome: 'Selecciona o crea un chat para comenzar.',
+    newChat: 'Nuevo Chat',
+    apiConfig: 'Config. API',
+    selectModel: 'Seleccionar modelo...',
+    thinkingToggle: 'Pensamiento NVIDIA (OFF=apagado, ON=auto)',
+    clear: 'Limpiar',
+    inputPlaceholder: 'Escribe un mensaje... (Shift+Enter para nueva línea)',
+    send: 'Enviar',
+    modelApiConfig: 'Configuración de API del Modelo',
+    providersList: 'Lista de Proveedores',
+    addProvider: 'Agregar Proveedor',
+    saveCurrentChanges: 'Guardar Cambios Actuales',
+    contextConfig: 'Configuración de Contexto',
+    name: 'Nombre',
+    systemPrompt: 'Prompt del Sistema',
+    maxHistory: 'Máx. mensajes (0=ilimitado)',
+    temperature: 'Temperatura',
+    topP: 'Top P',
+    otherParams: 'Otros parámetros (JSON)',
+    exportAll: 'Exportar Todo',
+    importConfig: 'Importar Config',
+    save: 'Guardar',
+    selectModelToAdd: 'Seleccionar modelos para agregar',
+    addSelectedModels: 'Agregar Modelos Seleccionados',
+    edit: 'Editar',
+    delete: 'Eliminar',
+    selectLanguage: 'Seleccionar Idioma',
+    emptyState: 'Selecciona un proveedor de la izquierda para editar',
+    confirmDeleteContext: '¿Eliminar este chat?',
+    confirmClearHistory: '¿Borrar todo el historial del chat?',
+    keepOneContext: 'Debes mantener al menos un chat',
+    confirmDeleteProvider: '¿Eliminar este proveedor?',
+    connecting: 'Conectando...',
+    connectionSuccessNoModels: 'Conexión exitosa, pero no se encontraron modelos.',
+    connectionSuccessWrongFormat: 'Conexión exitosa, pero el formato de respuesta es inesperado.',
+    connectionFailed: 'Error de conexión: ',
+    stop: 'Detener',
+    send: 'Enviar'
+  }
+};
+
+let currentLang = 'zh-CN'; // Default language
+
+function t(key) {
+  return translations[currentLang]?.[key] || translations['en'][key] || key;
+}
+
+function applyTranslations() {
+  // Welcome message
+  var welcomeEl = document.querySelector('.welcome-message');
+  if (welcomeEl) welcomeEl.textContent = t('welcome');
+  
+  // Add context button title
+  if (els.addContextBtn) els.addContextBtn.title = t('newChat');
+  
+  // Config button
+  if (els.configBtn) els.configBtn.textContent = t('apiConfig');
+  
+  // Model select placeholder
+  if (els.modelSelect && els.modelSelect.querySelector('option')) {
+    els.modelSelect.querySelector('option').textContent = t('selectModel');
+  }
+  
+  // Thinking toggle
+  if (els.thinkingToggleBtn) els.thinkingToggleBtn.title = t('thinkingToggle');
+  
+  // Clear button
+  if (els.clearBtn) {
+    els.clearBtn.textContent = t('clear');
+    els.clearBtn.title = t('confirmClearHistory');
+  }
+  
+  // Chat input placeholder
+  if (els.chatInput) els.chatInput.placeholder = t('inputPlaceholder');
+  
+  // Send button
+  if (els.sendBtn) els.sendBtn.textContent = t('send');
+  
+  // API Config Modal
+  var apiModalH3 = document.querySelector('#api-config-modal h3');
+  if (apiModalH3) apiModalH3.textContent = t('modelApiConfig');
+  var apiSidebarHeader = document.querySelector('#api-config-modal .sidebar-header');
+  if (apiSidebarHeader) apiSidebarHeader.textContent = t('providersList');
+  if (els.addProviderBtn) els.addProviderBtn.textContent = t('addProvider');
+  if (els.saveApiBtn) els.saveApiBtn.textContent = t('saveCurrentChanges');
+  var apiEmptyState = document.querySelector('#api-config-modal .empty-state');
+  if (apiEmptyState) apiEmptyState.textContent = t('emptyState');
+  
+  // Context Config Modal
+  var ctxModalH3 = document.querySelector('#context-config-modal h3');
+  if (ctxModalH3) ctxModalH3.textContent = t('contextConfig');
+  var ctxNameLabel = document.querySelector('label[for="ctx-name"]');
+  if (ctxNameLabel) ctxNameLabel.textContent = t('name');
+  var ctxSystemLabel = document.querySelector('label[for="ctx-system-prompt"]');
+  if (ctxSystemLabel) ctxSystemLabel.textContent = t('systemPrompt');
+  var ctxMaxHistoryLabel = document.querySelector('label[for="ctx-max-history"]');
+  if (ctxMaxHistoryLabel) ctxMaxHistoryLabel.textContent = t('maxHistory');
+  var ctxTempLabel = document.querySelector('label[for="ctx-temperature"]');
+  if (ctxTempLabel) ctxTempLabel.textContent = t('temperature');
+  var ctxTopPLabel = document.querySelector('label[for="ctx-top-p"]');
+  if (ctxTopPLabel) ctxTopPLabel.textContent = t('topP');
+  var ctxParamsLabel = document.querySelector('label[for="ctx-params"]');
+  if (ctxParamsLabel) ctxParamsLabel.textContent = t('otherParams');
+  if (els.exportBtn) els.exportBtn.textContent = t('exportAll');
+  if (els.importBtn) els.importBtn.textContent = t('importConfig');
+  if (els.saveCtxBtn) els.saveCtxBtn.textContent = t('save');
+  
+  // Model Selection Modal
+  var modelModalH3 = document.querySelector('#model-selection-modal h3');
+  if (modelModalH3) modelModalH3.textContent = t('selectModelToAdd');
+  if (els.confirmModelBtn) els.confirmModelBtn.textContent = t('addSelectedModels');
+  
+  // Context Menu
+  if (els.contextMenu) {
+    var editItem = els.contextMenu.querySelector('[data-action="edit"]');
+    if (editItem) editItem.textContent = t('edit');
+    var deleteItem = els.contextMenu.querySelector('[data-action="delete"]');
+    if (deleteItem) deleteItem.textContent = t('delete');
+  }
+  
+  // Language Modal
+  var langModalH3 = document.querySelector('#language-modal h3');
+  if (langModalH3) langModalH3.textContent = t('selectLanguage');
+  
+  // Update selected state on language options
+  var langOptions = document.querySelectorAll('.language-option');
+  langOptions.forEach(function(btn) {
+    btn.classList.toggle('selected', btn.getAttribute('data-lang') === currentLang);
+  });
+}
+
 let state = {
   contexts: [],
   providers: [DEFAULT_PROVIDER],
@@ -60,12 +274,14 @@ const els = {
   configBtn: document.getElementById('config-btn'),
   clearBtn: document.getElementById('clear-btn'),
   addContextBtn: document.getElementById('add-context-btn'),
-  
+  languageBtn: document.getElementById('language-btn'),
+
   // Modals
   apiModal: document.getElementById('api-config-modal'),
   ctxModal: document.getElementById('context-config-modal'),
   modelModal: document.getElementById('model-selection-modal'),
   contextMenu: document.getElementById('context-menu'),
+  languageModal: document.getElementById('language-modal'),
   
   // API Config Elements
   providersList: document.getElementById('providers-list'),
@@ -94,6 +310,8 @@ const els = {
 
 async function init() {
   await loadState();
+  await loadLanguage();
+  applyTranslations();
   renderContextBar();
   updateModelSelect();
   
@@ -108,6 +326,17 @@ async function init() {
   }
 
   setupEventListeners();
+}
+
+async function loadLanguage() {
+  const result = await chrome.storage.local.get(['sidebarLanguage']);
+  if (result.sidebarLanguage) {
+    currentLang = result.sidebarLanguage;
+  }
+}
+
+async function saveLanguage() {
+  await chrome.storage.local.set({ sidebarLanguage: currentLang });
 }
 
 async function loadState() {
@@ -130,7 +359,7 @@ async function createNewContext() {
   const id = Date.now().toString();
   const newContext = {
     id,
-    name: '新聊天',
+    name: t('newChat'),
     systemPrompt: 'You are a helpful assistant.',
     maxHistory: 0,
     temperature: 0.7,
@@ -184,7 +413,7 @@ function updateCurrentContextModel() {
 
 async function deleteContext(id) {
   if (state.contexts.length <= 1) {
-    alert('至少保留一个聊天上下文');
+    alert(t('keepOneContext'));
     return;
   }
   
@@ -324,7 +553,7 @@ async function sendMessage() {
 
   els.chatInput.value = '';
   adjustInputHeight();
-  els.sendBtn.textContent = '停止';
+  els.sendBtn.textContent = t('stop');
   isGenerating = true;
   
   const userMsg = { role: 'user', content };
@@ -456,7 +685,7 @@ async function sendMessage() {
     }
   } finally {
     isGenerating = false;
-    els.sendBtn.textContent = '发送';
+    els.sendBtn.textContent = t('send');
     abortController = null;
     els.chatInput.focus();
   }
@@ -561,6 +790,41 @@ function adjustInputHeight() {
 function setupEventListeners() {
     els.addContextBtn.addEventListener('click', createNewContext);
     
+    // Language button - open modal
+    if (els.languageBtn) {
+        els.languageBtn.onclick = function() {
+            els.languageModal.classList.remove('hidden');
+        };
+    }
+    
+    // Close language modal when clicking outside
+    if (els.languageModal) {
+        els.languageModal.onclick = function(e) {
+            if (e.target === els.languageModal) {
+                els.languageModal.classList.add('hidden');
+            }
+        };
+    }
+    
+    // Language options - click handler
+    const langOptionBtns = document.querySelectorAll('.language-option');
+    langOptionBtns.forEach(function(btn) {
+        btn.onclick = function() {
+            // Set selected language
+            var selectedLang = this.getAttribute('data-lang');
+            currentLang = selectedLang;
+            
+            // Save language
+            chrome.storage.local.set({ sidebarLanguage: currentLang });
+            
+            // Apply translations
+            applyTranslations();
+            
+            // Close modal
+            els.languageModal.classList.add('hidden');
+        };
+    });
+    
     els.chatInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             if (e.shiftKey) {
@@ -583,7 +847,7 @@ function setupEventListeners() {
     });
 
     els.clearBtn.addEventListener('click', () => {
-        if(confirm('确定清空当前对话历史吗？')) {
+        if(confirm(t('confirmClearHistory'))) {
             const ctx = getCurrentContext();
             if(ctx) {
                 ctx.messages = [];
@@ -616,7 +880,7 @@ function setupEventListeners() {
     els.contextMenu.querySelector('[data-action="edit"]').addEventListener('click', openContextConfig);
     els.contextMenu.querySelector('[data-action="delete"]').addEventListener('click', () => {
        const id = els.contextMenu.dataset.contextId;
-       if(confirm('删除此对话？')) {
+       if(confirm(t('confirmDeleteContext'))) {
            deleteContext(id);
        }
     });
@@ -760,7 +1024,7 @@ function renderProviderForm() {
 
     if (!isDefault) {
         document.getElementById('delete-provider-btn').addEventListener('click', () => {
-            if(confirm('删除此供应商？')) {
+            if(confirm(t('confirmDeleteProvider'))) {
                 tempProviders = tempProviders.filter(tp => tp.id !== p.id);
                 currentEditingProviderId = tempProviders[0]?.id || null;
                 renderApiConfigUI();
@@ -773,7 +1037,7 @@ async function fetchModelsAndShowModal(url, key) {
     const baseUrl = url.replace(/\/$/, '');
     const btn = document.getElementById('test-fetch-btn');
     
-    btn.textContent = '连接中...';
+    btn.textContent = t('connecting');
     btn.disabled = true;
     
     try {
@@ -792,13 +1056,13 @@ async function fetchModelsAndShowModal(url, key) {
                 renderModelCheckboxList(modelIds);
                 els.modelModal.classList.remove('hidden');
             } else {
-                alert('连接成功，但未找到模型数据。');
+                alert(t('connectionSuccessNoModels'));
             }
         } else {
-            alert('连接成功，但返回格式不符合预期。');
+            alert(t('connectionSuccessWrongFormat'));
         }
     } catch (e) {
-        alert('连接失败: ' + e.message);
+        alert(t('connectionFailed') + e.message);
     } finally {
         btn.textContent = '获取模型';
         btn.disabled = false;
