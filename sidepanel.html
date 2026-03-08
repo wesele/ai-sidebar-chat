@@ -63,6 +63,9 @@
         </div>
       </div>
       <div class="modal-footer">
+        <button id="export-models-btn" class="secondary-btn">导出模型配置</button>
+        <input type="file" id="import-models-file" style="display:none" accept=".json">
+        <button id="import-models-btn" class="secondary-btn">导入模型配置</button>
         <button id="save-api-config-btn" class="primary-btn">保存当前修改</button>
       </div>
     </div>
@@ -120,6 +123,9 @@
         <button class="close-modal-btn">&times;</button>
       </div>
       <div class="modal-body">
+        <div class="form-group">
+          <input type="text" id="model-filter-input" placeholder="过滤模型...">
+        </div>
         <div id="model-checkbox-list" class="checkbox-list">
            <!-- checkboxes -->
         </div>

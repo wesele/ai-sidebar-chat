@@ -60,9 +60,16 @@ const translations = {
     otherParams: 'Other params (JSON)',
     exportAll: 'Export All Config',
     importConfig: 'Import Config',
+    exportModelConfig: 'Export Model Config',
+    importModelConfig: 'Import Model Config',
     save: 'Save',
     selectModelToAdd: 'Select models to add',
     addSelectedModels: 'Add Selected Models',
+    filterModels: 'Filter models...',
+    addModel: 'Add',
+    modelsList: 'Model List',
+    addModelPlaceholder: 'Add model...',
+    noModels: 'No models',
     edit: 'Edit',
     delete: 'Delete',
     selectLanguage: 'Select Language',
@@ -100,9 +107,16 @@ const translations = {
     otherParams: '其他参数 (JSON)',
     exportAll: '导出所有配置',
     importConfig: '导入配置',
+    exportModelConfig: '导出模型配置',
+    importModelConfig: '导入模型配置',
     save: '保存',
     selectModelToAdd: '选择要添加的模型',
     addSelectedModels: '添加选中模型',
+    filterModels: '过滤模型...',
+    addModel: '添加',
+    modelsList: '模型列表',
+    addModelPlaceholder: '添加模型...',
+    noModels: '暂无模型',
     edit: '编辑',
     delete: '删除',
     selectLanguage: '选择语言',
@@ -140,9 +154,16 @@ const translations = {
     otherParams: 'Otros parámetros (JSON)',
     exportAll: 'Exportar Todo',
     importConfig: 'Importar Config',
+    exportModelConfig: 'Exportar Config. Modelos',
+    importModelConfig: 'Importar Config. Modelos',
     save: 'Guardar',
     selectModelToAdd: 'Seleccionar modelos para agregar',
     addSelectedModels: 'Agregar Modelos Seleccionados',
+    filterModels: 'Filtrar modelos...',
+    addModel: 'Agregar',
+    modelsList: 'Lista de Modelos',
+    addModelPlaceholder: 'Agregar modelo...',
+    noModels: 'Sin modelos',
     edit: 'Editar',
     delete: 'Eliminar',
     selectLanguage: 'Seleccionar Idioma',
@@ -204,6 +225,8 @@ function applyTranslations() {
   if (apiSidebarHeader) apiSidebarHeader.textContent = t('providersList');
   if (els.addProviderBtn) els.addProviderBtn.textContent = t('addProvider');
   if (els.saveApiBtn) els.saveApiBtn.textContent = t('saveCurrentChanges');
+  if (els.exportModelsBtn) els.exportModelsBtn.textContent = t('exportModelConfig');
+  if (els.importModelsBtn) els.importModelsBtn.textContent = t('importModelConfig');
   var apiEmptyState = document.querySelector('#api-config-modal .empty-state');
   if (apiEmptyState) apiEmptyState.textContent = t('emptyState');
   
@@ -229,6 +252,7 @@ function applyTranslations() {
   // Model Selection Modal
   var modelModalH3 = document.querySelector('#model-selection-modal h3');
   if (modelModalH3) modelModalH3.textContent = t('selectModelToAdd');
+  if (els.modelFilterInput) els.modelFilterInput.placeholder = t('filterModels');
   if (els.confirmModelBtn) els.confirmModelBtn.textContent = t('addSelectedModels');
   
   // Context Menu
@@ -258,6 +282,7 @@ let state = {
 
 let tempProviders = []; // For editing in modal
 let currentEditingProviderId = null;
+let allAvailableModels = []; // Store all fetched models for filtering
 
 let abortController = null;
 let isGenerating = false;
@@ -288,9 +313,13 @@ const els = {
   addProviderBtn: document.getElementById('add-provider-btn'),
   saveApiBtn: document.getElementById('save-api-config-btn'),
   providerForm: document.getElementById('provider-form'),
+  exportModelsBtn: document.getElementById('export-models-btn'),
+  importModelsBtn: document.getElementById('import-models-btn'),
+  importModelsFile: document.getElementById('import-models-file'),
   
   // Model Selection Elements
   modelCheckboxList: document.getElementById('model-checkbox-list'),
+  modelFilterInput: document.getElementById('model-filter-input'),
   confirmModelBtn: document.getElementById('confirm-model-selection-btn'),
 
   // Context Config Elements
@@ -877,6 +906,10 @@ function setupEventListeners() {
     els.importBtn.addEventListener('click', () => els.importFile.click());
     els.importFile.addEventListener('change', importData);
     
+    els.exportModelsBtn.addEventListener('click', exportModelConfig);
+    els.importModelsBtn.addEventListener('click', () => els.importModelsFile.click());
+    els.importModelsFile.addEventListener('change', importModelConfig);
+    
     els.contextMenu.querySelector('[data-action="edit"]').addEventListener('click', openContextConfig);
     els.contextMenu.querySelector('[data-action="delete"]').addEventListener('click', () => {
        const id = els.contextMenu.dataset.contextId;
@@ -886,6 +919,11 @@ function setupEventListeners() {
     });
 
     els.confirmModelBtn.addEventListener('click', confirmModelSelection);
+    
+    // Model filter input
+    els.modelFilterInput.addEventListener('input', (e) => {
+        renderModelCheckboxList(allAvailableModels, e.target.value);
+    });
 
     // Event delegation for Think Toggle and Copy Button
     els.chatContainer.addEventListener('click', (e) => {
@@ -955,6 +993,40 @@ function renderProvidersList() {
     });
 }
 
+function renderModelsList(provider) {
+    const modelsListEl = document.getElementById('p-edit-models-list');
+    if (!modelsListEl) return;
+    
+    modelsListEl.innerHTML = '';
+    
+    if (provider.models.length === 0) {
+        const emptyMsg = document.createElement('div');
+        emptyMsg.className = 'empty-models';
+        emptyMsg.textContent = t('noModels');
+        modelsListEl.appendChild(emptyMsg);
+        return;
+    }
+    
+    provider.models.forEach(model => {
+        const modelItem = document.createElement('div');
+        modelItem.className = 'model-item';
+        modelItem.innerHTML = `
+            <span class="model-name">${model}</span>
+            <button class="delete-model-btn" data-model="${model}" title="删除模型">×</button>
+        `;
+        
+        // Delete button click handler
+        const deleteBtn = modelItem.querySelector('.delete-model-btn');
+        deleteBtn.addEventListener('click', () => {
+            provider.models = provider.models.filter(m => m !== model);
+            renderModelsList(provider);
+            renderProvidersList();
+        });
+        
+        modelsListEl.appendChild(modelItem);
+    });
+}
+
 function renderProviderForm() {
     const p = tempProviders.find(tp => tp.id === currentEditingProviderId);
     if (!p) {
@@ -981,9 +1053,11 @@ function renderProviderForm() {
             </div>
         </div>
         <div class="form-group">
-            <label>模型 (逗号分隔)</label>
-            <div style="display: flex; gap: 8px;">
-                <input type="text" id="p-edit-models" value="${p.models.join(', ')}" style="flex:1">
+            <label>${t('modelsList')}</label>
+            <div id="p-edit-models-list" class="models-list"></div>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <input type="text" id="p-add-model-input" placeholder="${t('addModelPlaceholder')}" style="flex:1">
+                <button id="add-model-btn" class="secondary-btn" style="white-space:nowrap; padding: 8px;">${t('addModel')}</button>
                 <button id="test-fetch-btn" class="secondary-btn" style="white-space:nowrap; padding: 8px;">获取模型</button>
             </div>
         </div>
@@ -994,8 +1068,9 @@ function renderProviderForm() {
     const urlInput = document.getElementById('p-edit-url');
     const keyInput = document.getElementById('p-edit-key');
     const toggleKeyBtn = document.getElementById('toggle-key-visibility-btn');
-    const modelsInput = document.getElementById('p-edit-models');
     const testBtn = document.getElementById('test-fetch-btn');
+    const addModelBtn = document.getElementById('add-model-btn');
+    const addModelInput = document.getElementById('p-add-model-input');
 
     toggleKeyBtn.addEventListener('click', () => {
         if (keyInput.type === 'password') {
@@ -1009,18 +1084,37 @@ function renderProviderForm() {
 
     testBtn.addEventListener('click', () => fetchModelsAndShowModal(urlInput.value, keyInput.value));
     
+    // Render the models list
+    renderModelsList(p);
+    
+    // Add model button
+    addModelBtn.addEventListener('click', () => {
+        const modelName = addModelInput.value.trim();
+        if (modelName && !p.models.includes(modelName)) {
+            p.models.push(modelName);
+            renderModelsList(p);
+            addModelInput.value = '';
+            renderProvidersList();
+        }
+    });
+    
+    // Allow Enter key to add model
+    addModelInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            addModelBtn.click();
+        }
+    });
+    
     const updateHandler = () => {
         p.name = nameInput.value;
         p.baseUrl = urlInput.value;
         p.apiKey = keyInput.value;
-        p.models = modelsInput.value.split(',').map(s => s.trim()).filter(s => s);
         renderProvidersList(); 
     };
 
     nameInput.addEventListener('input', updateHandler);
     urlInput.addEventListener('input', updateHandler);
     keyInput.addEventListener('input', updateHandler);
-    modelsInput.addEventListener('input', updateHandler);
 
     if (!isDefault) {
         document.getElementById('delete-provider-btn').addEventListener('click', () => {
@@ -1052,6 +1146,10 @@ async function fetchModelsAndShowModal(url, key) {
         if (data.data && Array.isArray(data.data)) {
             const modelIds = data.data.map(m => m.id);
             if (modelIds.length > 0) {
+                // Store all models for filtering
+                allAvailableModels = modelIds;
+                // Clear filter input
+                els.modelFilterInput.value = '';
                 // Show modal
                 renderModelCheckboxList(modelIds);
                 els.modelModal.classList.remove('hidden');
@@ -1069,14 +1167,29 @@ async function fetchModelsAndShowModal(url, key) {
     }
 }
 
-function renderModelCheckboxList(models) {
+function renderModelCheckboxList(models, filterText = '') {
     els.modelCheckboxList.innerHTML = '';
-    // Sort logic? Alphabetical
-    models.sort().forEach(m => {
+    
+    // Get current provider's existing models
+    const p = tempProviders.find(tp => tp.id === currentEditingProviderId);
+    const existingModels = p ? new Set(p.models) : new Set();
+    
+    // Filter models based on filter text (fuzzy matching)
+    let filteredModels = models;
+    if (filterText && filterText.trim()) {
+        const filter = filterText.toLowerCase().trim();
+        filteredModels = models.filter(m => 
+            m.toLowerCase().includes(filter)
+        );
+    }
+    
+    // Sort alphabetically
+    filteredModels.sort().forEach(m => {
         const div = document.createElement('div');
         div.className = 'checkbox-item';
+        const isChecked = existingModels.has(m);
         div.innerHTML = `
-            <input type="checkbox" value="${m}" id="model-cb-${m}">
+            <input type="checkbox" value="${m}" id="model-cb-${m}" ${isChecked ? 'checked' : ''}>
             <label for="model-cb-${m}">${m}</label>
         `;
         // Allow clicking div to toggle
@@ -1088,6 +1201,14 @@ function renderModelCheckboxList(models) {
         });
         els.modelCheckboxList.appendChild(div);
     });
+    
+    // Show message if no models match filter
+    if (filteredModels.length === 0 && filterText.trim()) {
+        const noResults = document.createElement('div');
+        noResults.className = 'no-results';
+        noResults.textContent = '没有匹配的模型';
+        els.modelCheckboxList.appendChild(noResults);
+    }
 }
 
 function confirmModelSelection() {
@@ -1107,11 +1228,9 @@ function confirmModelSelection() {
     const newModels = [...new Set([...currentModels, ...selected])];
     p.models = newModels;
     
-    // Update input in form if visible
-    const modelsInput = document.getElementById('p-edit-models');
-    if (modelsInput) {
-        modelsInput.value = newModels.join(', ');
-    }
+    // Refresh the models list display
+    renderModelsList(p);
+    renderProvidersList();
     
     els.modelModal.classList.add('hidden');
 }
@@ -1220,6 +1339,21 @@ function exportData() {
     downloadAnchorNode.remove();
 }
 
+function exportModelConfig() {
+    const modelConfig = {
+        providers: state.providers,
+        exportDate: new Date().toISOString(),
+        version: '1.0'
+    };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(modelConfig, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "model_config.json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+}
+
 function importData(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -1234,6 +1368,44 @@ function importData(event) {
                 location.reload();
             } else {
                 alert('无效的配置文件');
+            }
+        } catch (err) {
+            alert('导入失败: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+function importModelConfig(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const json = JSON.parse(e.target.result);
+            if (json.providers && Array.isArray(json.providers)) {
+                // Merge imported providers with existing ones
+                const existingIds = new Set(state.providers.map(p => p.id));
+                let addedCount = 0;
+                
+                json.providers.forEach(provider => {
+                    if (!existingIds.has(provider.id)) {
+                        state.providers.push(provider);
+                        addedCount++;
+                    }
+                });
+                
+                await saveState();
+                alert(`成功导入 ${addedCount} 个供应商配置`);
+                
+                // Refresh the UI if the modal is open
+                if (!els.apiModal.classList.contains('hidden')) {
+                    tempProviders = JSON.parse(JSON.stringify(state.providers));
+                    renderProvidersList();
+                }
+            } else {
+                alert('无效的模型配置文件');
             }
         } catch (err) {
             alert('导入失败: ' + err.message);
