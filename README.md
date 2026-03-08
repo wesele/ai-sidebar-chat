@@ -1,6 +1,6 @@
 # AI Sidebar Chat
 
-[![Version](https://img.shields.io/badge/version-1.1-blue.svg)](https://github.com/wesele/ai-sidebar-chat/releases/tag/v1.1)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/wesele/ai-sidebar-chat/releases/tag/v1.2.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 [English](#english) | [中文](#中文) | [Español](#español)
@@ -18,6 +18,11 @@ A Gemini-style AI chat sidebar extension for Chrome (Manifest V3).
 - Persistent storage for chat history
 - Modern, clean UI design
 - Works on all websites
+- **Multiple AI Provider Support**: Configure and switch between different AI providers
+- **Model Configuration Export/Import**: Backup and restore your provider configurations
+- **Smart Model Selection**: Filter and search models with fuzzy matching
+- **Visual Model Management**: Easy-to-use list interface for managing models
+- **Multilingual Support**: English, Chinese (中文), and Spanish (Español)
 
 ### Installation
 
@@ -40,6 +45,9 @@ A Gemini-style AI chat sidebar extension for Chrome (Manifest V3).
 - Type your message in the chat input
 - Press Enter or click Send to send your message
 - Chat history is automatically saved
+- Configure AI providers by clicking "API Config" button
+- Export/import model configurations for backup or sharing
+- Use the filter to quickly find models when adding from API
 
 ### Files
 
@@ -67,6 +75,11 @@ MIT
 - 持久化存储聊天记录
 - 现代简洁的 UI 设计
 - 支持所有网站
+- **多 AI 供应商支持**：配置和切换不同的 AI 供应商
+- **模型配置导出/导入**：备份和恢复您的供应商配置
+- **智能模型选择**：使用模糊匹配过滤和搜索模型
+- **可视化模型管理**：易于使用的列表界面管理模型
+- **多语言支持**：英语、中文和西班牙语
 
 ### 安装方法
 
@@ -89,6 +102,9 @@ MIT
 - 在聊天输入框中输入消息
 - 按 Enter 键或点击发送按钮发送消息
 - 聊天记录会自动保存
+- 点击"API配置"按钮配置 AI 供应商
+- 导出/导入模型配置以备份或分享
+- 使用过滤器从 API 添加模型时快速查找模型
 
 ### 文件说明
 
@@ -116,6 +132,11 @@ Una extensión de barra lateral de chat con IA estilo Gemini para Chrome (Manife
 - Almacenamiento persistente del historial de chat
 - Diseño moderno y limpio
 - Funciona en todos los sitios web
+- **Soporte de múltiples proveedores de IA**: Configura y cambia entre diferentes proveedores de IA
+- **Exportar/Importar configuración de modelos**: Haz copias de seguridad y restaura tus configuraciones de proveedores
+- **Selección inteligente de modelos**: Filtra y busca modelos con coincidencia difusa
+- **Gestión visual de modelos**: Interfaz de lista fácil de usar para gestionar modelos
+- **Soporte multilingüe**: Inglés, chino (中文) y español (Español)
 
 ### Instalación
 
@@ -138,6 +159,9 @@ Una extensión de barra lateral de chat con IA estilo Gemini para Chrome (Manife
 - Escribe tu mensaje en el campo de entrada del chat
 - Presiona Enter o haz clic en Enviar para mandar el mensaje
 - El historial de chat se guarda automáticamente
+- Configura proveedores de IA haciendo clic en el botón "Config. API"
+- Exporta/importa configuraciones de modelos para respaldo o compartir
+- Usa el filtro para encontrar rápidamente modelos al agregar desde la API
 
 ### Archivos
 
@@ -155,6 +179,30 @@ MIT
 ---
 
 ## Changelog
+
+### v1.2.0 (2026-03-08)
+
+#### Added
+- **Model Configuration Export/Import**: Export and import provider configurations to/from JSON files
+- **Model Filtering**: Added filter input in model selection modal with fuzzy search capability
+- **Auto-selection**: Already selected models are automatically marked with checkboxes
+- **Visual Model List**: Changed from comma-separated text input to a visual list format
+- **Model Management**: Add models manually with input field and delete individual models with × button
+- **Empty State**: Shows "No models" message when model list is empty
+- **No Results Message**: Displays message when filter matches no models
+
+#### Changed
+- Improved model selection UI with better visual hierarchy
+- Enhanced user experience for managing provider models
+- Updated translations for all new features (English, Chinese, Spanish)
+
+#### Technical
+- Added `exportModelConfig()` function for exporting provider configurations
+- Added `importModelConfig()` function for importing and merging provider configurations
+- Added `renderModelsList()` function for visual model list rendering
+- Enhanced `renderModelCheckboxList()` to support filtering and auto-selection
+- Added `allAvailableModels` state variable for filtering
+- Updated manifest version to 1.2.0
 
 ### v1.1 (2026-02-25)
 
