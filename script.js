@@ -36,6 +36,9 @@ const DEFAULT_PROVIDER = {
   models: ['llama3', 'mistral', 'qwen2']
 };
 
+// Image state
+let selectedImages = [];
+
 // Translations
 const translations = {
   'en': {
@@ -294,6 +297,9 @@ const els = {
   chatContainer: document.getElementById('chat-container'),
   chatInput: document.getElementById('chat-input'),
   sendBtn: document.getElementById('send-btn'),
+  imageBtn: document.getElementById('image-btn'),
+  imageInput: document.getElementById('image-input'),
+  imagePreviewContainer: document.getElementById('image-preview-container'),
   modelSelect: document.getElementById('model-select'),
   thinkingToggleBtn: document.getElementById('thinking-toggle-btn'),
   configBtn: document.getElementById('config-btn'),
@@ -509,7 +515,23 @@ function appendMessageToUI(msg, index) {
 
 function renderMessageContent(msg) {
     if (msg.role === 'user') {
-        return parseMarkdown(msg.content);
+        let html = '';
+        
+        // Render images if present
+        if (msg.images && msg.images.length > 0) {
+            html += '<div class="message-images">';
+            msg.images.forEach(img => {
+                html += `<img src="${img.data}" alt="${img.name}" class="message-image">`;
+            });
+            html += '</div>';
+        }
+        
+        // Render text content
+        if (msg.content && msg.content !== '[图片]') {
+            html += parseMarkdown(msg.content);
+        }
+        
+        return html;
     }
     
     // Assistant Logic
@@ -575,7 +597,9 @@ function scrollToBottom() {
 
 async function sendMessage() {
   const content = els.chatInput.value.trim();
-  if (!content) return;
+  
+  // Allow sending if there's content or images
+  if (!content && selectedImages.length === 0) return;
   
   const ctx = getCurrentContext();
   if (!ctx) return;
@@ -585,7 +609,16 @@ async function sendMessage() {
   els.sendBtn.textContent = t('stop');
   isGenerating = true;
   
-  const userMsg = { role: 'user', content };
+  // Create user message with images if present
+  const userMsg = { 
+    role: 'user', 
+    content: content || '[图片]',
+    images: selectedImages.length > 0 ? [...selectedImages] : null
+  };
+  
+  // Clear selected images after creating message
+  clearSelectedImages();
+  
   ctx.messages.push(userMsg);
   appendMessageToUI(userMsg, ctx.messages.length - 1);
   scrollToBottom();
@@ -723,9 +756,12 @@ async function sendMessage() {
 async function streamCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
     const url = `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`;
     
+    // Format messages for API (handle multimodal content)
+    const formattedMessages = formatMessagesForAPI(messages);
+    
     const body = {
         model: modelId,
-        messages: messages,
+        messages: formattedMessages,
         temperature: parseFloat(settings.temperature),
         top_p: parseFloat(settings.topP),
         stream: true,
@@ -786,6 +822,80 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
 }
 
 // --- Utils ---
+
+// Image handling functions
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function renderImagePreviews() {
+    if (selectedImages.length === 0) {
+        els.imagePreviewContainer.classList.add('hidden');
+        els.imagePreviewContainer.innerHTML = '';
+        return;
+    }
+    
+    els.imagePreviewContainer.classList.remove('hidden');
+    els.imagePreviewContainer.innerHTML = selectedImages.map((img, index) => `
+        <div class="image-preview-item" data-index="${index}">
+            <img src="${img.data}" alt="${img.name}">
+            <button class="remove-image-btn" data-index="${index}">&times;</button>
+        </div>
+    `).join('');
+    
+    // Add remove button handlers
+    els.imagePreviewContainer.querySelectorAll('.remove-image-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const index = parseInt(e.target.dataset.index);
+            selectedImages.splice(index, 1);
+            renderImagePreviews();
+        });
+    });
+}
+
+function clearSelectedImages() {
+    selectedImages = [];
+    renderImagePreviews();
+}
+
+// Convert messages to API format with multimodal content
+function formatMessagesForAPI(messages) {
+    return messages.map(msg => {
+        if (msg.images && msg.images.length > 0) {
+            // Convert to multimodal content format
+            const content = [];
+            
+            // Add text content if present
+            if (msg.content && msg.content !== '[图片]') {
+                content.push({
+                    type: 'text',
+                    text: msg.content
+                });
+            }
+            
+            // Add images
+            msg.images.forEach(img => {
+                content.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: img.data
+                    }
+                });
+            });
+            
+            return {
+                role: msg.role,
+                content: content
+            };
+        }
+        return msg;
+    });
+}
 
 function parseMarkdown(text) {
   if (!text) return '';
@@ -873,6 +983,27 @@ function setupEventListeners() {
         } else {
             sendMessage();
         }
+    });
+
+    // Image upload handling
+    els.imageBtn.addEventListener('click', () => {
+        els.imageInput.click();
+    });
+
+    els.imageInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        for (const file of files) {
+            if (file.type.startsWith('image/')) {
+                const base64 = await fileToBase64(file);
+                selectedImages.push({
+                    name: file.name,
+                    type: file.type,
+                    data: base64
+                });
+            }
+        }
+        renderImagePreviews();
+        els.imageInput.value = ''; // Reset to allow selecting same file again
     });
 
     els.clearBtn.addEventListener('click', () => {

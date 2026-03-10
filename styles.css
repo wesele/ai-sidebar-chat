@@ -347,6 +347,86 @@ body {
   cursor: not-allowed;
 }
 
+#image-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  margin-left: 4px;
+  font-size: 18px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+#image-btn:hover {
+  opacity: 1;
+}
+
+/* Image Preview */
+#image-preview-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  padding-bottom: 0;
+}
+
+#image-preview-container.hidden {
+  display: none;
+}
+
+.image-preview-item {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.image-preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-image-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-image-btn:hover {
+  background: rgba(255,0,0,0.8);
+}
+
+/* Message Images */
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message-image {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
 /* Modals */
 .modal {
   position: fixed;

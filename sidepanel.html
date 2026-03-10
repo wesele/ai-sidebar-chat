@@ -34,7 +34,12 @@
         <button id="clear-btn" class="text-btn" title="清空当前上下文消息">清空</button>
       </div>
       <div id="input-box-container">
+        <div id="image-preview-container" class="hidden">
+          <!-- Image previews will be shown here -->
+        </div>
         <textarea id="chat-input" placeholder="输入消息... (Shift+Enter 换行)" rows="1"></textarea>
+        <input type="file" id="image-input" accept="image/*" multiple style="display:none">
+        <button id="image-btn" title="Send image">📷</button>
         <button id="send-btn">发送</button>
       </div>
     </div>
