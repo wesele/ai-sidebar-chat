@@ -1,15 +1,18 @@
 {
   "manifest_version": 3,
   "name": "AI Sidebar Chat",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "A Gemini-style AI chat sidebar extension.",
   "permissions": [
     "sidePanel",
     "storage"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "https://chat.deepseek.com/*",
+    "https://qwen.aikit.club/*"
   ],
+
   "side_panel": {
     "default_path": "sidepanel.html"
   },

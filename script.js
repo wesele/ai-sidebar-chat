@@ -36,6 +36,17 @@ const DEFAULT_PROVIDER = {
   models: ['llama3', 'mistral', 'qwen2']
 };
 
+const QWEN_WEB_PROVIDER = {
+  id: 'qwen-web',
+  name: '通义千问 (网页版)',
+  type: 'qwen-web',
+  baseUrl: '',
+  apiKey: '',
+  models: ['qwen3.5-flash', 'qwen3.5-plus', 'qwen3.6-plus', 'qwen3.5-max', 'qwen3-coder-plus', 'qwen-max-latest'],
+  isBuiltin: true,
+  noBaseUrl: true
+};
+
 // Image state
 let selectedImages = [];
 
@@ -46,7 +57,7 @@ const translations = {
     newChat: 'New Chat',
     apiConfig: 'API Config',
     selectModel: 'Select model...',
-    thinkingToggle: 'NVIDIA Thinking (OFF=off, ON=auto)',
+    thinkingToggle: 'NVIDIA Thinking (Default=no param, ON=auto, OFF=off)',
     clear: 'Clear',
     inputPlaceholder: 'Enter message... (Shift+Enter for new line)',
     send: 'Send',
@@ -93,7 +104,7 @@ const translations = {
     newChat: '新聊天',
     apiConfig: 'API配置',
     selectModel: '选择模型...',
-    thinkingToggle: 'NVIDIA 思考参数 (OFF=关闭, ON=自动)',
+    thinkingToggle: 'NVIDIA 思考参数 (默认=不传参, 开=自动, 关=关闭)',
     clear: '清空',
     inputPlaceholder: '输入消息... (Shift+Enter 换行)',
     send: '发送',
@@ -140,7 +151,7 @@ const translations = {
     newChat: 'Nuevo Chat',
     apiConfig: 'Config. API',
     selectModel: 'Seleccionar modelo...',
-    thinkingToggle: 'Pensamiento NVIDIA (OFF=apagado, ON=auto)',
+    thinkingToggle: 'Pensamiento NVIDIA (Default=sin param, ON=auto, OFF=apagado)',
     clear: 'Limpiar',
     inputPlaceholder: 'Escribe un mensaje... (Shift+Enter para nueva línea)',
     send: 'Enviar',
@@ -207,7 +218,10 @@ function applyTranslations() {
   }
   
   // Thinking toggle
-  if (els.thinkingToggleBtn) els.thinkingToggleBtn.title = t('thinkingToggle');
+  if (els.thinkingToggleBtn) {
+    els.thinkingToggleBtn.title = t('thinkingToggle');
+    els.thinkingToggleBtn.value = thinkingMode;
+  }
   
   // Clear button
   if (els.clearBtn) {
@@ -279,7 +293,7 @@ function applyTranslations() {
 
 let state = {
   contexts: [],
-  providers: [DEFAULT_PROVIDER],
+  providers: [QWEN_WEB_PROVIDER, DEFAULT_PROVIDER],
   currentContextId: null
 };
 
@@ -289,7 +303,7 @@ let allAvailableModels = []; // Store all fetched models for filtering
 
 let abortController = null;
 let isGenerating = false;
-let thinkingEnabled = false; // Default OFF (explicitly disable thinking)
+let thinkingMode = 'default'; // Three modes: 'default', 'on', 'off'
 
 // DOM Elements
 const els = {
@@ -378,8 +392,15 @@ async function loadState() {
   const result = await chrome.storage.local.get(['sidebarState']);
   if (result.sidebarState) {
     state = result.sidebarState;
+    
+    // Add builtin providers if missing, always at the beginning
+    if (!state.providers.some(p => p.id === 'qwen-web')) {
+      state.providers.unshift(QWEN_WEB_PROVIDER);
+    }
+    
+    // Add default local provider if missing, at the end
     if (!state.providers.some(p => p.id === 'default-local')) {
-      state.providers.unshift(DEFAULT_PROVIDER);
+      state.providers.push(DEFAULT_PROVIDER);
     }
   }
 }
@@ -462,9 +483,7 @@ async function deleteContext(id) {
 }
 
 function toggleThinking() {
-  thinkingEnabled = !thinkingEnabled;
-  els.thinkingToggleBtn.textContent = thinkingEnabled ? 'ON' : 'OFF';
-  els.thinkingToggleBtn.classList.toggle('on', thinkingEnabled);
+  thinkingMode = els.thinkingToggleBtn.value;
 }
 
 // --- Rendering ---
@@ -754,6 +773,12 @@ async function sendMessage() {
 }
 
 async function streamCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
+    // Route to appropriate implementation based on provider type
+    if (provider.type === 'qwen-web') {
+        return streamQwenCompletion(provider, modelId, messages, settings, customParams, onChunk, signal);
+    }
+    
+    // Original OpenAI compatible implementation
     const url = `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`;
     
     // Format messages for API (handle multimodal content)
@@ -769,10 +794,13 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
         ...customParams
     };
     
-    // Handle thinking parameter: OFF = explicitly disable, ON = auto (no parameter)
-    if (!thinkingEnabled) {
+    // Handle thinking parameter: default=no param, on=auto, off=explicitly disable
+    if (thinkingMode === 'off') {
         body.chat_template_kwargs = { enable_thinking: false };
+    } else if (thinkingMode === 'on') {
+        body.chat_template_kwargs = { enable_thinking: true };
     }
+    // default: no parameter (let API decide)
 
     const response = await fetch(url, {
         method: 'POST',
@@ -897,6 +925,82 @@ function formatMessagesForAPI(messages) {
     });
 }
 
+// === Qwen Web Client Implementation ===
+
+// === Qwen Web Client Implementation ===
+const QWEN_PROXY_URL = 'https://qwen.aikit.club/v1/chat/completions';
+
+async function streamQwenCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
+  const token = provider.apiKey;
+  if (!token) throw new Error('Qwen token is required, please configure in API settings');
+  
+  const lowerModel = modelId.toLowerCase();
+  const isThinking = lowerModel.includes('think') || lowerModel.includes('reason');
+  const isSearch = lowerModel.includes('search');
+
+  const body = {
+    model: modelId,
+    messages,
+    stream: true,
+    enable_thinking: isThinking
+  };
+
+  if (isSearch) {
+    body.tools = [{ type: 'web_search' }];
+  }
+
+  const response = await fetch(QWEN_PROXY_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body),
+    signal
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Qwen API Error: ${response.status} - ${text.substring(0, 500)}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    buffer += decoder.decode(value);
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line === 'data: [DONE]') continue;
+      if (!line.startsWith('data: ')) continue;
+
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.error) {
+          throw new Error(data.error?.message || 'Unknown error');
+        }
+
+        if (data.choices && data.choices.length > 0) {
+          const delta = data.choices[0].delta;
+          if (delta) {
+            if (delta.reasoning_content) {
+              onChunk(delta.reasoning_content, null, true);
+            } else if (delta.content) {
+              onChunk(delta.content, null, false);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+  }
+}
+
 function parseMarkdown(text) {
   if (!text) return '';
   let safeText = text.replace(/</g, '<').replace(/>/g, '>');
@@ -973,6 +1077,15 @@ function setupEventListeners() {
                 sendMessage();
             }
         }
+        if (e.key === 'Delete' && e.ctrlKey) {
+            e.preventDefault();
+            const ctx = getCurrentContext();
+            if(ctx) {
+                ctx.messages = [];
+                saveState();
+                renderMessages([]);
+            }
+        }
     });
     
     els.chatInput.addEventListener('input', adjustInputHeight);
@@ -1007,13 +1120,11 @@ function setupEventListeners() {
     });
 
     els.clearBtn.addEventListener('click', () => {
-        if(confirm(t('confirmClearHistory'))) {
-            const ctx = getCurrentContext();
-            if(ctx) {
-                ctx.messages = [];
-                saveState();
-                renderMessages([]);
-            }
+        const ctx = getCurrentContext();
+        if(ctx) {
+            ctx.messages = [];
+            saveState();
+            renderMessages([]);
         }
     });
     
@@ -1138,21 +1249,34 @@ function renderModelsList(provider) {
         return;
     }
     
+    const isBuiltin = provider.isBuiltin === true;
+    
     provider.models.forEach(model => {
         const modelItem = document.createElement('div');
         modelItem.className = 'model-item';
-        modelItem.innerHTML = `
-            <span class="model-name">${model}</span>
-            <button class="delete-model-btn" data-model="${model}" title="删除模型">×</button>
-        `;
         
-        // Delete button click handler
-        const deleteBtn = modelItem.querySelector('.delete-model-btn');
-        deleteBtn.addEventListener('click', () => {
-            provider.models = provider.models.filter(m => m !== model);
-            renderModelsList(provider);
-            renderProvidersList();
-        });
+        if (isBuiltin) {
+            // Builtin provider models are readonly
+            modelItem.innerHTML = `
+                <span class="model-name">${model}</span>
+            `;
+        } else {
+            // Normal provider models can be deleted
+            modelItem.innerHTML = `
+                <span class="model-name">${model}</span>
+                <button class="delete-model-btn" data-model="${model}" title="删除模型">×</button>
+            `;
+            
+            // Delete button click handler
+            const deleteBtn = modelItem.querySelector('.delete-model-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', () => {
+                    provider.models = provider.models.filter(m => m !== model);
+                    renderModelsList(provider);
+                    renderProvidersList();
+                });
+            }
+        }
         
         modelsListEl.appendChild(modelItem);
     });
@@ -1167,15 +1291,23 @@ function renderProviderForm() {
     
     const isDefault = (p.id === 'default-local');
 
-    els.providerForm.innerHTML = `
+    const isBuiltin = p.isBuiltin === true;
+    
+    let formHtml = `
         <div class="form-group">
             <label>名称</label>
-            <input type="text" id="p-edit-name" value="${p.name}" ${isDefault ? 'readonly' : ''}>
-        </div>
+            <input type="text" id="p-edit-name" value="${p.name}" ${isDefault || isBuiltin ? 'readonly' : ''}>
+        </div>`;
+        
+    if (!isBuiltin) {
+        formHtml += `
         <div class="form-group">
             <label>Base URL</label>
             <input type="text" id="p-edit-url" value="${p.baseUrl}">
-        </div>
+        </div>`;
+    }
+    
+    formHtml += `
         <div class="form-group">
             <label>API Key</label>
             <div class="password-input-wrapper">
@@ -1185,15 +1317,23 @@ function renderProviderForm() {
         </div>
         <div class="form-group">
             <label>${t('modelsList')}</label>
-            <div id="p-edit-models-list" class="models-list"></div>
+            <div id="p-edit-models-list" class="models-list"></div>`;
+            
+    if (!isBuiltin) {
+        formHtml += `
             <div style="display: flex; gap: 8px; margin-top: 8px;">
                 <input type="text" id="p-add-model-input" placeholder="${t('addModelPlaceholder')}" style="flex:1">
                 <button id="add-model-btn" class="secondary-btn" style="white-space:nowrap; padding: 8px;">${t('addModel')}</button>
                 <button id="test-fetch-btn" class="secondary-btn" style="white-space:nowrap; padding: 8px;">获取模型</button>
-            </div>
+            </div>`;
+    }
+    
+    formHtml += `
         </div>
-        ${!isDefault ? '<button class="danger-text" id="delete-provider-btn">删除此供应商</button>' : ''}
+        ${!isDefault && !isBuiltin ? '<button class="danger-text" id="delete-provider-btn">删除此供应商</button>' : ''}
     `;
+    
+    els.providerForm.innerHTML = formHtml;
 
     const nameInput = document.getElementById('p-edit-name');
     const urlInput = document.getElementById('p-edit-url');
@@ -1213,41 +1353,49 @@ function renderProviderForm() {
         }
     });
 
-    testBtn.addEventListener('click', () => fetchModelsAndShowModal(urlInput.value, keyInput.value));
+    if (testBtn && urlInput) {
+        testBtn.addEventListener('click', () => fetchModelsAndShowModal(urlInput.value, keyInput.value));
+    }
     
     // Render the models list
     renderModelsList(p);
     
-    // Add model button
-    addModelBtn.addEventListener('click', () => {
-        const modelName = addModelInput.value.trim();
-        if (modelName && !p.models.includes(modelName)) {
-            p.models.push(modelName);
-            renderModelsList(p);
-            addModelInput.value = '';
-            renderProvidersList();
-        }
-    });
-    
-    // Allow Enter key to add model
-    addModelInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            addModelBtn.click();
-        }
-    });
+    // Add model button (only for non-builtin providers)
+    if (addModelBtn && addModelInput) {
+        addModelBtn.addEventListener('click', () => {
+            const modelName = addModelInput.value.trim();
+            if (modelName && !p.models.includes(modelName)) {
+                p.models.push(modelName);
+                renderModelsList(p);
+                addModelInput.value = '';
+                renderProvidersList();
+            }
+        });
+        
+        // Allow Enter key to add model
+        addModelInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addModelBtn.click();
+            }
+        });
+    }
     
     const updateHandler = () => {
         p.name = nameInput.value;
-        p.baseUrl = urlInput.value;
+        if (urlInput) {
+            p.baseUrl = urlInput.value;
+        }
         p.apiKey = keyInput.value;
         renderProvidersList(); 
     };
 
     nameInput.addEventListener('input', updateHandler);
-    urlInput.addEventListener('input', updateHandler);
+    if (urlInput) {
+        urlInput.addEventListener('input', updateHandler);
+    }
     keyInput.addEventListener('input', updateHandler);
 
-    if (!isDefault) {
+    if (!isDefault && !isBuiltin && document.getElementById('delete-provider-btn')) {
         document.getElementById('delete-provider-btn').addEventListener('click', () => {
             if(confirm(t('confirmDeleteProvider'))) {
                 tempProviders = tempProviders.filter(tp => tp.id !== p.id);
