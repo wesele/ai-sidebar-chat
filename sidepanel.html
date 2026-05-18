@@ -30,11 +30,7 @@
         <select id="model-select">
           <option value="" disabled selected>选择模型...</option>
         </select>
-        <select id="thinking-toggle-btn" class="thinking-select" title="NVIDIA 思考参数">
-          <option value="default">默认</option>
-          <option value="on">开</option>
-          <option value="off">关</option>
-        </select>
+        <button id="thinking-toggle-btn" class="toggle-btn default" title="NVIDIA 思考参数 (默认/开/关)">默认</button>
         <button id="clear-btn" class="text-btn" title="清空当前上下文消息">清空</button>
       </div>
       <div id="input-box-container">
@@ -97,7 +93,7 @@
           <textarea id="ctx-system-prompt" rows="3"></textarea>
         </div>
         <div class="form-group">
-          <label for="ctx-max-history">消息数量上限 (0为不限)</label>
+          <label for="ctx-max-history">消息数量上限 (0为不限, 1为仅当前)</label>
           <input type="number" id="ctx-max-history" min="0" value="0">
         </div>
         <div class="form-group">

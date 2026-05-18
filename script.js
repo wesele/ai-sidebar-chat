@@ -33,19 +33,12 @@ const DEFAULT_PROVIDER = {
   name: 'Default (Local)',
   baseUrl: 'http://localhost:11434/v1',
   apiKey: 'sk-ant-api03-xxx', // Dummy key for local
-  models: ['llama3', 'mistral', 'qwen2']
+  models: ['llama3', 'mistral', 'qwen2'],
+  apiType: 'openai',
+  googleSearch: false
 };
 
-const QWEN_WEB_PROVIDER = {
-  id: 'qwen-web',
-  name: '通义千问 (网页版)',
-  type: 'qwen-web',
-  baseUrl: '',
-  apiKey: '',
-  models: ['qwen3.5-flash', 'qwen3.5-plus', 'qwen3.6-plus', 'qwen3.5-max', 'qwen3-coder-plus', 'qwen-max-latest'],
-  isBuiltin: true,
-  noBaseUrl: true
-};
+const REMOVED_WEB_PROVIDER_IDS = new Set(['qwen-web', 'deepseek-web']);
 
 // Image state
 let selectedImages = [];
@@ -68,7 +61,7 @@ const translations = {
     contextConfig: 'Context Configuration',
     name: 'Name',
     systemPrompt: 'System Prompt',
-    maxHistory: 'Max messages (0=unlimited)',
+    maxHistory: 'Max messages (0=unlimited, 1=current only)',
     temperature: 'Temperature',
     topP: 'Top P',
     otherParams: 'Other params (JSON)',
@@ -115,7 +108,7 @@ const translations = {
     contextConfig: '上下文配置',
     name: '名称',
     systemPrompt: '系统提示词',
-    maxHistory: '消息数量上限 (0为不限)',
+    maxHistory: '消息数量上限 (0为不限, 1为仅当前)',
     temperature: 'Temperature',
     topP: 'Top P',
     otherParams: '其他参数 (JSON)',
@@ -162,7 +155,7 @@ const translations = {
     contextConfig: 'Configuración de Contexto',
     name: 'Nombre',
     systemPrompt: 'Prompt del Sistema',
-    maxHistory: 'Máx. mensajes (0=ilimitado)',
+    maxHistory: 'Máx. mensajes (0=ilimitado, 1=solo actual)',
     temperature: 'Temperatura',
     topP: 'Top P',
     otherParams: 'Otros parámetros (JSON)',
@@ -220,7 +213,7 @@ function applyTranslations() {
   // Thinking toggle
   if (els.thinkingToggleBtn) {
     els.thinkingToggleBtn.title = t('thinkingToggle');
-    els.thinkingToggleBtn.value = thinkingMode;
+    updateThinkingButton();
   }
   
   // Clear button
@@ -293,7 +286,7 @@ function applyTranslations() {
 
 let state = {
   contexts: [],
-  providers: [QWEN_WEB_PROVIDER, DEFAULT_PROVIDER],
+  providers: [DEFAULT_PROVIDER],
   currentContextId: null
 };
 
@@ -392,15 +385,31 @@ async function loadState() {
   const result = await chrome.storage.local.get(['sidebarState']);
   if (result.sidebarState) {
     state = result.sidebarState;
+    state.providers = (state.providers || []).filter(p => !REMOVED_WEB_PROVIDER_IDS.has(p.id));
     
-    // Add builtin providers if missing, always at the beginning
-    if (!state.providers.some(p => p.id === 'qwen-web')) {
-      state.providers.unshift(QWEN_WEB_PROVIDER);
-    }
+    // Migrate: ensure all providers have apiType and googleSearch fields
+    state.providers.forEach(p => {
+        if (!p.apiType) p.apiType = 'openai';
+        if (p.googleSearch === undefined) p.googleSearch = false;
+    });
     
     // Add default local provider if missing, at the end
     if (!state.providers.some(p => p.id === 'default-local')) {
       state.providers.push(DEFAULT_PROVIDER);
+    }
+
+    const fallbackProvider = state.providers[0];
+    if (fallbackProvider) {
+      state.contexts = (state.contexts || []).map(ctx => {
+        if (!state.providers.some(p => p.id === ctx.modelProviderId)) {
+          return {
+            ...ctx,
+            modelProviderId: fallbackProvider.id,
+            modelId: fallbackProvider.models[0] || ''
+          };
+        }
+        return ctx;
+      });
     }
   }
 }
@@ -483,7 +492,20 @@ async function deleteContext(id) {
 }
 
 function toggleThinking() {
-  thinkingMode = els.thinkingToggleBtn.value;
+  const modes = ['default', 'on', 'off'];
+  const currentIdx = modes.indexOf(thinkingMode);
+  thinkingMode = modes[(currentIdx + 1) % modes.length];
+  updateThinkingButton();
+}
+
+function updateThinkingButton() {
+  if (!els.thinkingToggleBtn) return;
+  const labels = { default: '默认', on: '开', off: '关' };
+  els.thinkingToggleBtn.textContent = labels[thinkingMode] || '默认';
+  els.thinkingToggleBtn.className = 'toggle-btn';
+  if (thinkingMode !== 'default') {
+    els.thinkingToggleBtn.classList.add(thinkingMode);
+  }
 }
 
 // --- Rendering ---
@@ -662,8 +684,10 @@ async function sendMessage() {
     if (!provider) throw new Error('Provider not found');
     
     let history = ctx.messages.slice(0, -1);
-    if (ctx.maxHistory > 0) {
-      history = history.slice(-ctx.maxHistory);
+    if (ctx.maxHistory === 1) {
+      history = [];
+    } else if (ctx.maxHistory > 1) {
+      history = history.slice(-(ctx.maxHistory - 1));
     }
     const messages = [
       { role: 'system', content: ctx.systemPrompt },
@@ -773,12 +797,13 @@ async function sendMessage() {
 }
 
 async function streamCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
-    // Route to appropriate implementation based on provider type
-    if (provider.type === 'qwen-web') {
-        return streamQwenCompletion(provider, modelId, messages, settings, customParams, onChunk, signal);
+    const apiType = provider.apiType || 'openai';
+    
+    if (apiType === 'gemini') {
+        return streamGeminiCompletion(provider, modelId, messages, settings, customParams, onChunk, signal);
     }
     
-    // Original OpenAI compatible implementation
+    // --- OpenAI-compatible path ---
     const url = `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`;
     
     // Format messages for API (handle multimodal content)
@@ -842,6 +867,145 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
                         onChunk(reasoning, null, true);
                     } else if (content || usage) {
                         onChunk(content, usage, false);
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+}
+
+async function streamGeminiCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
+    // Normalize baseUrl for Gemini
+    let rawUrl = provider.baseUrl;
+    if (!rawUrl || rawUrl === 'https://api.openai.com/v1') {
+        rawUrl = 'https://generativelanguage.googleapis.com/v1beta';
+    }
+    const baseUrl = rawUrl.replace(/\/$/, '');
+    const url = `${baseUrl}/models/${encodeURIComponent(modelId)}:streamGenerateContent?alt=sse`;
+
+    // Build Gemini contents array and extract system instruction
+    let systemInstruction = null;
+    const contents = [];
+
+    for (const msg of messages) {
+        if (msg.role === 'system') {
+            systemInstruction = msg.content;
+            continue;
+        }
+
+        const parts = [];
+        // Text part
+        if (msg.content) {
+            parts.push({ text: msg.content });
+        }
+        // Image parts (for user messages with images)
+        if (msg.images && msg.images.length > 0) {
+            for (const img of msg.images) {
+                // Parse data URL: "data:image/jpeg;base64,/9j..."
+                const match = img.data.match(/^data:(.+?);base64,(.+)$/);
+                if (match) {
+                    parts.push({
+                        inlineData: {
+                            mimeType: match[1],
+                            data: match[2]
+                        }
+                    });
+                }
+            }
+        }
+
+        const geminiRole = msg.role === 'assistant' ? 'model' : msg.role;
+        contents.push({
+            role: geminiRole,
+            parts: parts
+        });
+    }
+
+    const body = {
+        contents: contents,
+        generationConfig: {
+            temperature: parseFloat(settings.temperature),
+            topP: parseFloat(settings.topP)
+        }
+    };
+
+    if (systemInstruction) {
+        body.systemInstruction = {
+            parts: [{ text: systemInstruction }]
+        };
+    }
+
+    // Google Search Grounding
+    if (provider.googleSearch) {
+        body.tools = [{ google_search: {} }];
+    }
+
+    // Handle thinking parameter based on the toggle
+    // Note: includeThoughts works on Gemini 2.5/3 models
+    // 'off' and 'default' both omit the param to avoid errors on models that don't support thinkingConfig
+    if (thinkingMode === 'on') {
+        body.thinkingConfig = { includeThoughts: true };
+    }
+    // 'off' / 'default' = no param (let API decide)
+
+    // Merge custom params (allow overriding generationConfig etc.)
+    Object.assign(body, customParams);
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': provider.apiKey
+        },
+        body: JSON.stringify(body),
+        signal
+    });
+
+    if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`Gemini API Error: ${response.status}${text ? ' - ' + text.slice(0, 300) : ''}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6).trim();
+                if (!dataStr) continue;
+                try {
+                    const data = JSON.parse(dataStr);
+                    const candidate = data.candidates && data.candidates[0];
+                    const parts = candidate?.content?.parts;
+                    const usageMeta = data.usageMetadata || null;
+                    let usage = null;
+                    if (usageMeta) {
+                        usage = {
+                            completion_tokens: usageMeta.candidatesTokenCount || 0,
+                            prompt_tokens: usageMeta.promptTokenCount || 0,
+                            total_tokens: usageMeta.totalTokenCount || 0
+                        };
+                    }
+                    // Gemini thinking response: parts[0] = thinking (thought:true), parts[1] = answer
+                    // For non-thinking models, parts[0] = answer
+                    if (parts && parts.length > 0) {
+                        for (const p of parts) {
+                            const text = p.text || '';
+                            const isThought = p.thought === true;
+                            if (text) {
+                                onChunk(text, null, isThought);
+                            }
+                        }
+                    }
+                    if (usage) {
+                        onChunk('', usage, false);
                     }
                 } catch (e) {}
             }
@@ -923,82 +1087,6 @@ function formatMessagesForAPI(messages) {
         }
         return msg;
     });
-}
-
-// === Qwen Web Client Implementation ===
-
-// === Qwen Web Client Implementation ===
-const QWEN_PROXY_URL = 'https://qwen.aikit.club/v1/chat/completions';
-
-async function streamQwenCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
-  const token = provider.apiKey;
-  if (!token) throw new Error('Qwen token is required, please configure in API settings');
-  
-  const lowerModel = modelId.toLowerCase();
-  const isThinking = lowerModel.includes('think') || lowerModel.includes('reason');
-  const isSearch = lowerModel.includes('search');
-
-  const body = {
-    model: modelId,
-    messages,
-    stream: true,
-    enable_thinking: isThinking
-  };
-
-  if (isSearch) {
-    body.tools = [{ type: 'web_search' }];
-  }
-
-  const response = await fetch(QWEN_PROXY_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body),
-    signal
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Qwen API Error: ${response.status} - ${text.substring(0, 500)}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    
-    buffer += decoder.decode(value);
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (line === 'data: [DONE]') continue;
-      if (!line.startsWith('data: ')) continue;
-
-      try {
-        const data = JSON.parse(line.slice(6));
-        if (data.error) {
-          throw new Error(data.error?.message || 'Unknown error');
-        }
-
-        if (data.choices && data.choices.length > 0) {
-          const delta = data.choices[0].delta;
-          if (delta) {
-            if (delta.reasoning_content) {
-              onChunk(delta.reasoning_content, null, true);
-            } else if (delta.content) {
-              onChunk(delta.content, null, false);
-            }
-          }
-        }
-      } catch (e) {}
-    }
-  }
 }
 
 function parseMarkdown(text) {
@@ -1293,19 +1381,31 @@ function renderProviderForm() {
 
     const isBuiltin = p.isBuiltin === true;
     
+    const apiType = p.apiType || 'openai';
+
+    // Normalize baseUrl based on apiType
+    if (apiType === 'gemini' && p.baseUrl !== 'https://generativelanguage.googleapis.com/v1beta') {
+        p.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+    }
+
     let formHtml = `
         <div class="form-group">
             <label>名称</label>
             <input type="text" id="p-edit-name" value="${p.name}" ${isDefault || isBuiltin ? 'readonly' : ''}>
+        </div>
+        <div class="form-group">
+            <label>API Type</label>
+            <select id="p-edit-api-type" ${isDefault || isBuiltin ? 'disabled' : ''}>
+                <option value="openai" ${apiType === 'openai' ? 'selected' : ''}>OpenAI Compatible</option>
+                <option value="gemini" ${apiType === 'gemini' ? 'selected' : ''}>Gemini API</option>
+            </select>
         </div>`;
         
-    if (!isBuiltin) {
-        formHtml += `
-        <div class="form-group">
+    formHtml += `
+        <div class="form-group" id="p-edit-url-group"${apiType === 'gemini' ? ' style="display:none"' : ''}>
             <label>Base URL</label>
             <input type="text" id="p-edit-url" value="${p.baseUrl}">
         </div>`;
-    }
     
     formHtml += `
         <div class="form-group">
@@ -1313,6 +1413,15 @@ function renderProviderForm() {
             <div class="password-input-wrapper">
                 <input type="password" id="p-edit-key" value="${p.apiKey}">
                 <button id="toggle-key-visibility-btn" class="icon-btn" title="显示/隐藏 API Key">👁️</button>
+            </div>
+        </div>
+        <div class="form-group" id="p-edit-google-search-group"${apiType !== 'gemini' ? ' style="display:none"' : ''}>
+            <label>
+                <input type="checkbox" id="p-edit-google-search" ${p.googleSearch ? 'checked' : ''}>
+                Google Search Grounding
+            </label>
+            <div style="font-size:11px;color:var(--secondary-text-color);margin-top:4px;">
+                Enables the model to search Google for real-time information
             </div>
         </div>
         <div class="form-group">
@@ -1337,11 +1446,15 @@ function renderProviderForm() {
 
     const nameInput = document.getElementById('p-edit-name');
     const urlInput = document.getElementById('p-edit-url');
+    const urlGroup = document.getElementById('p-edit-url-group');
+    const apiTypeSelect = document.getElementById('p-edit-api-type');
     const keyInput = document.getElementById('p-edit-key');
     const toggleKeyBtn = document.getElementById('toggle-key-visibility-btn');
     const testBtn = document.getElementById('test-fetch-btn');
     const addModelBtn = document.getElementById('add-model-btn');
     const addModelInput = document.getElementById('p-add-model-input');
+    const googleSearchGroup = document.getElementById('p-edit-google-search-group');
+    const googleSearchCheckbox = document.getElementById('p-edit-google-search');
 
     toggleKeyBtn.addEventListener('click', () => {
         if (keyInput.type === 'password') {
@@ -1353,8 +1466,32 @@ function renderProviderForm() {
         }
     });
 
-    if (testBtn && urlInput) {
-        testBtn.addEventListener('click', () => fetchModelsAndShowModal(urlInput.value, keyInput.value));
+    if (testBtn) {
+        testBtn.addEventListener('click', () => {
+            const baseUrl = urlInput ? urlInput.value : (p.baseUrl || 'https://generativelanguage.googleapis.com/v1beta');
+            fetchModelsAndShowModal(baseUrl, keyInput.value, apiTypeSelect ? apiTypeSelect.value : 'openai');
+        });
+    }
+    
+    // API Type change handler
+    if (apiTypeSelect) {
+        apiTypeSelect.addEventListener('change', () => {
+            const selectedType = apiTypeSelect.value;
+            p.apiType = selectedType;
+            if (selectedType === 'gemini') {
+                if (urlGroup) urlGroup.style.display = 'none';
+                if (googleSearchGroup) googleSearchGroup.style.display = '';
+                // Default to Gemini endpoint if still OpenAI default
+                if (p.baseUrl === 'https://api.openai.com/v1') {
+                    p.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+                    if (urlInput) urlInput.value = p.baseUrl;
+                }
+            } else {
+                if (urlGroup) urlGroup.style.display = '';
+                if (googleSearchGroup) googleSearchGroup.style.display = 'none';
+            }
+            renderProvidersList();
+        });
     }
     
     // Render the models list
@@ -1385,6 +1522,12 @@ function renderProviderForm() {
         if (urlInput) {
             p.baseUrl = urlInput.value;
         }
+        if (apiTypeSelect) {
+            p.apiType = apiTypeSelect.value;
+        }
+        if (googleSearchCheckbox) {
+            p.googleSearch = googleSearchCheckbox.checked;
+        }
         p.apiKey = keyInput.value;
         renderProvidersList(); 
     };
@@ -1392,6 +1535,12 @@ function renderProviderForm() {
     nameInput.addEventListener('input', updateHandler);
     if (urlInput) {
         urlInput.addEventListener('input', updateHandler);
+    }
+    if (apiTypeSelect) {
+        apiTypeSelect.addEventListener('change', updateHandler);
+    }
+    if (googleSearchCheckbox) {
+        googleSearchCheckbox.addEventListener('change', updateHandler);
     }
     keyInput.addEventListener('input', updateHandler);
 
@@ -1406,7 +1555,7 @@ function renderProviderForm() {
     }
 }
 
-async function fetchModelsAndShowModal(url, key) {
+async function fetchModelsAndShowModal(url, key, apiType) {
     const baseUrl = url.replace(/\/$/, '');
     const btn = document.getElementById('test-fetch-btn');
     
@@ -1414,29 +1563,55 @@ async function fetchModelsAndShowModal(url, key) {
     btn.disabled = true;
     
     try {
-        const res = await fetch(`${baseUrl}/models`, {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${key}` }
-        });
-        
-        if (!res.ok) throw new Error(`Status ${res.status}`);
-        
-        const data = await res.json();
-        if (data.data && Array.isArray(data.data)) {
-            const modelIds = data.data.map(m => m.id);
-            if (modelIds.length > 0) {
-                // Store all models for filtering
-                allAvailableModels = modelIds;
-                // Clear filter input
-                els.modelFilterInput.value = '';
-                // Show modal
-                renderModelCheckboxList(modelIds);
-                els.modelModal.classList.remove('hidden');
+        if (apiType === 'gemini') {
+            // Gemini models list endpoint
+            const encodedKey = encodeURIComponent(key);
+            const fetchUrl = `${baseUrl}/models?key=${encodedKey}`;
+            const debug = `baseUrl="${baseUrl}" keyLen=${key.length} apiType=${apiType}`;
+            const res = await fetch(fetchUrl, { method: 'GET' });
+            if (!res.ok) {
+                const body = await res.text().catch(() => '');
+                throw new Error(`Status ${res.status}\n${debug}\n${body ? body.slice(0, 200) : ''}`);
+            }
+            const data = await res.json();
+            if (data.models && Array.isArray(data.models)) {
+                const modelIds = data.models.map(m => m.name.replace('models/', ''));
+                if (modelIds.length > 0) {
+                    allAvailableModels = modelIds;
+                    els.modelFilterInput.value = '';
+                    renderModelCheckboxList(modelIds);
+                    els.modelModal.classList.remove('hidden');
+                } else {
+                    alert(t('connectionSuccessNoModels'));
+                }
             } else {
-                alert(t('connectionSuccessNoModels'));
+                alert(t('connectionSuccessWrongFormat'));
             }
         } else {
-            alert(t('connectionSuccessWrongFormat'));
+            const res = await fetch(`${baseUrl}/models`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${key}` }
+            });
+            
+            if (!res.ok) throw new Error(`Status ${res.status}`);
+            
+            const data = await res.json();
+            if (data.data && Array.isArray(data.data)) {
+                const modelIds = data.data.map(m => m.id);
+                if (modelIds.length > 0) {
+                    // Store all models for filtering
+                    allAvailableModels = modelIds;
+                    // Clear filter input
+                    els.modelFilterInput.value = '';
+                    // Show modal
+                    renderModelCheckboxList(modelIds);
+                    els.modelModal.classList.remove('hidden');
+                } else {
+                    alert(t('connectionSuccessNoModels'));
+                }
+            } else {
+                alert(t('connectionSuccessWrongFormat'));
+            }
         }
     } catch (e) {
         alert(t('connectionFailed') + e.message);
@@ -1521,7 +1696,9 @@ function addProviderUI() {
         name: 'New Provider',
         baseUrl: 'https://api.openai.com/v1',
         apiKey: '',
-        models: ['gpt-3.5-turbo']
+        models: ['gpt-3.5-turbo'],
+        apiType: 'openai',
+        googleSearch: false
     });
     currentEditingProviderId = newId;
     renderApiConfigUI();
@@ -1670,6 +1847,8 @@ function importModelConfig(event) {
                 
                 json.providers.forEach(provider => {
                     if (!existingIds.has(provider.id)) {
+                        if (!provider.apiType) provider.apiType = 'openai';
+                        if (provider.googleSearch === undefined) provider.googleSearch = false;
                         state.providers.push(provider);
                         addedCount++;
                     }
