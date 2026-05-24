@@ -4,9 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Sidebar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="gemini-theme">
   <div id="app-container">
     <!-- Top Context Bar -->
     <div id="context-bar-container">
@@ -31,16 +34,21 @@
           <option value="" disabled selected>选择模型...</option>
         </select>
         <button id="thinking-toggle-btn" class="toggle-btn default" title="NVIDIA 思考参数 (默认/开/关)">默认</button>
+        <button id="stats-toggle-btn" class="toggle-btn on" title="显示时间/速度指标">📊</button>
+        <button id="align-toggle-btn" class="toggle-btn" title="消息对齐方式">⇄</button>
         <button id="clear-btn" class="text-btn" title="清空当前上下文消息">清空</button>
       </div>
       <div id="input-box-container">
         <div id="image-preview-container" class="hidden">
           <!-- Image previews will be shown here -->
         </div>
-        <textarea id="chat-input" placeholder="输入消息... (Shift+Enter 换行)" rows="1"></textarea>
-        <input type="file" id="image-input" accept="image/*" multiple style="display:none">
-        <button id="image-btn" title="Send image">📷</button>
-        <button id="send-btn">发送</button>
+        <div class="input-row">
+          <textarea id="chat-input" placeholder="输入消息... (Shift+Enter 换行)" rows="1"></textarea>
+          <input type="file" id="image-input" accept="image/*" multiple style="display:none">
+          <button id="image-btn" title="Send image">📷</button>
+          <button id="mic-btn" title="语音输入">🎤</button>
+          <button id="send-btn">➤</button>
+        </div>
       </div>
     </div>
   </div>
@@ -108,6 +116,10 @@
           <label for="ctx-params">其他参数 (JSON)</label>
           <textarea id="ctx-params" rows="2" placeholder='{"thinking": {"budget_tokens": 1024}}'></textarea>
         </div>
+        <div class="form-group">
+          <label for="ctx-reasoning-effort">reasoning_effort</label>
+          <input type="text" id="ctx-reasoning-effort" placeholder="low / medium / high">
+        </div>
         <div class="form-actions">
            <button id="export-data-btn" class="secondary-btn">导出所有配置</button>
            <input type="file" id="import-file" style="display:none" accept=".json">
@@ -169,6 +181,47 @@
             <span class="lang-name">Español</span>
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Speech Config Modal -->
+  <div id="speech-config-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="speech-config-title">语音输入设置</h3>
+        <button class="close-modal-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label id="speech-lang-label">输入语言</label>
+          <div id="speech-lang-options" class="speech-lang-options">
+            <button class="speech-lang-option selected" data-lang="zh-CN">
+              <span class="lang-flag">🇨🇳</span>
+              <span class="lang-name">中文</span>
+            </button>
+            <button class="speech-lang-option" data-lang="en">
+              <span class="lang-flag">🇺🇸</span>
+              <span class="lang-name">English</span>
+            </button>
+            <button class="speech-lang-option" data-lang="es">
+              <span class="lang-flag">🇪🇸</span>
+              <span class="lang-name">Español</span>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label id="speech-sensitivity-label">灵敏度 (静默等待时间)</label>
+          <div class="speech-slider-row">
+            <span>快</span>
+            <input type="range" id="speech-sensitivity" min="300" max="2000" step="100" value="600">
+            <span>慢</span>
+          </div>
+          <div class="speech-slider-value" id="speech-sensitivity-value">600ms</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="speech-start-btn" class="primary-btn">开始录音</button>
       </div>
     </div>
   </div>

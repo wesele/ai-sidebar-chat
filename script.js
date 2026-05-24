@@ -43,6 +43,10 @@ const REMOVED_WEB_PROVIDER_IDS = new Set(['qwen-web', 'deepseek-web']);
 // Image state
 let selectedImages = [];
 
+// Speech recognition state
+let isRecording = false;
+let recognition = null;
+
 // Translations
 const translations = {
   'en': {
@@ -65,6 +69,13 @@ const translations = {
     temperature: 'Temperature',
     topP: 'Top P',
     otherParams: 'Other params (JSON)',
+    reasoningEffort: 'reasoning_effort',
+    speechConfigTitle: 'Speech Input Settings',
+    speechLangLabel: 'Input Language',
+    speechSensitivityLabel: 'Auto-send delay',
+    speechStartBtn: 'Start Recording',
+    speechFast: 'Short',
+    speechSlow: 'Long',
     exportAll: 'Export All Config',
     importConfig: 'Import Config',
     exportModelConfig: 'Export Model Config',
@@ -90,7 +101,13 @@ const translations = {
     connectionSuccessWrongFormat: 'Connection successful, but response format is unexpected.',
     connectionFailed: 'Connection failed: ',
     stop: 'Stop',
-    send: 'Send'
+    send: 'Send',
+    startRecording: 'Voice input',
+    stopRecording: 'Stop recording',
+    statsToggleOn: 'Hide timing stats',
+    statsToggleOff: 'Show timing stats',
+    messageAlignLeftRight: 'User right, AI left',
+    messageAlignBothLeft: 'Both on left'
   },
   'zh-CN': {
     welcome: '请选择或新建一个聊天上下文开始。',
@@ -112,6 +129,13 @@ const translations = {
     temperature: 'Temperature',
     topP: 'Top P',
     otherParams: '其他参数 (JSON)',
+    reasoningEffort: 'reasoning_effort',
+    speechConfigTitle: '语音输入设置',
+    speechLangLabel: '输入语言',
+    speechSensitivityLabel: '自动发送延迟',
+    speechStartBtn: '开始录音',
+    speechFast: '短',
+    speechSlow: '长',
     exportAll: '导出所有配置',
     importConfig: '导入配置',
     exportModelConfig: '导出模型配置',
@@ -137,7 +161,13 @@ const translations = {
     connectionSuccessWrongFormat: '连接成功，但返回格式不符合预期。',
     connectionFailed: '连接失败: ',
     stop: '停止',
-    send: '发送'
+    send: '发送',
+    startRecording: '语音输入',
+    stopRecording: '停止录音',
+    statsToggleOn: '隐藏时间指标',
+    statsToggleOff: '显示时间指标',
+    messageAlignLeftRight: '用户右，AI左',
+    messageAlignBothLeft: '都在左侧'
   },
   'es': {
     welcome: 'Selecciona o crea un chat para comenzar.',
@@ -159,6 +189,13 @@ const translations = {
     temperature: 'Temperatura',
     topP: 'Top P',
     otherParams: 'Otros parámetros (JSON)',
+    reasoningEffort: 'reasoning_effort',
+    speechConfigTitle: 'Configuración de Voz',
+    speechLangLabel: 'Idioma de entrada',
+    speechSensitivityLabel: 'Retardo de envío',
+    speechStartBtn: 'Iniciar Grabación',
+    speechFast: 'Corto',
+    speechSlow: 'Largo',
     exportAll: 'Exportar Todo',
     importConfig: 'Importar Config',
     exportModelConfig: 'Exportar Config. Modelos',
@@ -184,7 +221,13 @@ const translations = {
     connectionSuccessWrongFormat: 'Conexión exitosa, pero el formato de respuesta es inesperado.',
     connectionFailed: 'Error de conexión: ',
     stop: 'Detener',
-    send: 'Enviar'
+    send: 'Enviar',
+    startRecording: 'Entrada de voz',
+    stopRecording: 'Detener grabación',
+    statsToggleOn: 'Ocultar estadísticas',
+    statsToggleOff: 'Mostrar estadísticas',
+    messageAlignLeftRight: 'Usuario der, AI izq',
+    messageAlignBothLeft: 'Ambos a la izq'
   }
 };
 
@@ -216,6 +259,12 @@ function applyTranslations() {
     updateThinkingButton();
   }
   
+  // Stats toggle
+  updateStatsButton();
+  
+  // Align toggle
+  updateAlignButton();
+  
   // Clear button
   if (els.clearBtn) {
     els.clearBtn.textContent = t('clear');
@@ -227,6 +276,9 @@ function applyTranslations() {
   
   // Send button
   if (els.sendBtn) els.sendBtn.textContent = t('send');
+  
+  // Mic button
+  if (els.micBtn) els.micBtn.title = t('startRecording');
   
   // API Config Modal
   var apiModalH3 = document.querySelector('#api-config-modal h3');
@@ -255,9 +307,20 @@ function applyTranslations() {
   if (ctxTopPLabel) ctxTopPLabel.textContent = t('topP');
   var ctxParamsLabel = document.querySelector('label[for="ctx-params"]');
   if (ctxParamsLabel) ctxParamsLabel.textContent = t('otherParams');
+  var ctxReasoningEffortLabel = document.querySelector('label[for="ctx-reasoning-effort"]');
+  if (ctxReasoningEffortLabel) ctxReasoningEffortLabel.textContent = t('reasoningEffort');
   if (els.exportBtn) els.exportBtn.textContent = t('exportAll');
   if (els.importBtn) els.importBtn.textContent = t('importConfig');
   if (els.saveCtxBtn) els.saveCtxBtn.textContent = t('save');
+  
+  // Speech Config Modal
+  var speechTitle = document.getElementById('speech-config-title');
+  if (speechTitle) speechTitle.textContent = t('speechConfigTitle');
+  var speechLangLabel = document.getElementById('speech-lang-label');
+  if (speechLangLabel) speechLangLabel.textContent = t('speechLangLabel');
+  var speechSensitivityLabel = document.getElementById('speech-sensitivity-label');
+  if (speechSensitivityLabel) speechSensitivityLabel.textContent = t('speechSensitivityLabel');
+  if (els.speechStartBtn) els.speechStartBtn.textContent = t('speechStartBtn');
   
   // Model Selection Modal
   var modelModalH3 = document.querySelector('#model-selection-modal h3');
@@ -296,7 +359,15 @@ let allAvailableModels = []; // Store all fetched models for filtering
 
 let abortController = null;
 let isGenerating = false;
+let sendCount = 0;
 let thinkingMode = 'default'; // Three modes: 'default', 'on', 'off'
+let showStats = true;
+let messageAlign = 'left-right'; // 'left-right' or 'both-left'
+
+let speechConfig = {
+  lang: currentLang === 'zh-CN' ? 'zh-CN' : currentLang === 'es' ? 'es' : 'en',
+  silenceTimeout: 600
+};
 
 // DOM Elements
 const els = {
@@ -307,8 +378,11 @@ const els = {
   imageBtn: document.getElementById('image-btn'),
   imageInput: document.getElementById('image-input'),
   imagePreviewContainer: document.getElementById('image-preview-container'),
+  micBtn: document.getElementById('mic-btn'),
   modelSelect: document.getElementById('model-select'),
   thinkingToggleBtn: document.getElementById('thinking-toggle-btn'),
+  statsToggleBtn: document.getElementById('stats-toggle-btn'),
+  alignToggleBtn: document.getElementById('align-toggle-btn'),
   configBtn: document.getElementById('config-btn'),
   clearBtn: document.getElementById('clear-btn'),
   addContextBtn: document.getElementById('add-context-btn'),
@@ -342,10 +416,16 @@ const els = {
   ctxTemp: document.getElementById('ctx-temperature'),
   ctxTopP: document.getElementById('ctx-top-p'),
   ctxParams: document.getElementById('ctx-params'),
+  ctxReasoningEffort: document.getElementById('ctx-reasoning-effort'),
   saveCtxBtn: document.getElementById('save-context-config-btn'),
   exportBtn: document.getElementById('export-data-btn'),
   importBtn: document.getElementById('import-data-btn'),
-  importFile: document.getElementById('import-file')
+  importFile: document.getElementById('import-file'),
+  speechModal: document.getElementById('speech-config-modal'),
+  speechLangOptions: document.getElementById('speech-lang-options'),
+  speechSensitivity: document.getElementById('speech-sensitivity'),
+  speechSensitivityValue: document.getElementById('speech-sensitivity-value'),
+  speechStartBtn: document.getElementById('speech-start-btn')
 };
 
 // --- Initialization ---
@@ -353,7 +433,11 @@ const els = {
 async function init() {
   await loadState();
   await loadLanguage();
+  await loadMessageAlign();
   applyTranslations();
+  updateStatsButton();
+  updateAlignButton();
+  updateMessageAlignment();
   renderContextBar();
   updateModelSelect();
   
@@ -405,10 +489,11 @@ async function loadState() {
           return {
             ...ctx,
             modelProviderId: fallbackProvider.id,
-            modelId: fallbackProvider.models[0] || ''
+            modelId: fallbackProvider.models[0] || '',
+            reasoningEffort: ctx.reasoningEffort || ''
           };
         }
-        return ctx;
+        return { ...ctx, reasoningEffort: ctx.reasoningEffort || '' };
       });
     }
   }
@@ -430,6 +515,7 @@ async function createNewContext() {
     temperature: 0.7,
     topP: 1.0,
     customParams: '{}',
+    reasoningEffort: '',
     messages: [],
     modelProviderId: state.providers[0].id,
     modelId: state.providers[0].models[0] || ''
@@ -491,6 +577,36 @@ async function deleteContext(id) {
   switchContext(state.currentContextId);
 }
 
+async function loadMessageAlign() {
+  const result = await chrome.storage.local.get(['sidebarMessageAlign']);
+  if (result.sidebarMessageAlign) {
+    messageAlign = result.sidebarMessageAlign;
+  }
+}
+
+async function saveMessageAlign() {
+  await chrome.storage.local.set({ sidebarMessageAlign: messageAlign });
+}
+
+function toggleMessageAlign() {
+  messageAlign = messageAlign === 'left-right' ? 'both-left' : 'left-right';
+  updateAlignButton();
+  updateMessageAlignment();
+  saveMessageAlign();
+}
+
+function updateAlignButton() {
+  if (!els.alignToggleBtn) return;
+  const titles = { 'left-right': '⇄', 'both-left': '←' };
+  els.alignToggleBtn.textContent = titles[messageAlign] || '⇄';
+  els.alignToggleBtn.classList.toggle('on', messageAlign === 'both-left');
+  els.alignToggleBtn.title = messageAlign === 'left-right' ? t('messageAlignLeftRight') : t('messageAlignBothLeft');
+}
+
+function updateMessageAlignment() {
+  els.chatContainer.classList.toggle('both-left', messageAlign === 'both-left');
+}
+
 function toggleThinking() {
   const modes = ['default', 'on', 'off'];
   const currentIdx = modes.indexOf(thinkingMode);
@@ -506,6 +622,18 @@ function updateThinkingButton() {
   if (thinkingMode !== 'default') {
     els.thinkingToggleBtn.classList.add(thinkingMode);
   }
+}
+
+function toggleStats() {
+  showStats = !showStats;
+  updateStatsButton();
+  els.chatContainer.classList.toggle('hide-stats', !showStats);
+}
+
+function updateStatsButton() {
+  if (!els.statsToggleBtn) return;
+  els.statsToggleBtn.classList.toggle('on', showStats);
+  els.statsToggleBtn.title = showStats ? t('statsToggleOn') : t('statsToggleOff');
 }
 
 // --- Rendering ---
@@ -531,6 +659,7 @@ function renderContextBar() {
 
 function renderMessages(messages) {
   els.chatContainer.innerHTML = '';
+  updateMessageAlignment();
   if (messages.length === 0) {
     const welcome = document.createElement('div');
     welcome.className = 'welcome-message';
@@ -647,6 +776,7 @@ async function sendMessage() {
 
   els.chatInput.value = '';
   adjustInputHeight();
+  sendCount++;
   els.sendBtn.textContent = t('stop');
   isGenerating = true;
   
@@ -789,9 +919,13 @@ async function sendMessage() {
        msgDiv.innerHTML += `<br><span style="color:red">Error: ${err.message}</span>`;
     }
   } finally {
-    isGenerating = false;
-    els.sendBtn.textContent = t('send');
-    abortController = null;
+    sendCount--;
+    if (sendCount <= 0) {
+      sendCount = 0;
+      isGenerating = false;
+      els.sendBtn.textContent = t('send');
+      abortController = null;
+    }
     els.chatInput.focus();
   }
 }
@@ -818,6 +952,10 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
         stream_options: { include_usage: true },
         ...customParams
     };
+    
+    if (settings.reasoningEffort) {
+        body.reasoning_effort = settings.reasoningEffort;
+    }
     
     // Handle thinking parameter: default=no param, on=auto, off=explicitly disable
     if (thinkingMode === 'off') {
@@ -928,6 +1066,10 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
             topP: parseFloat(settings.topP)
         }
     };
+
+    if (settings.reasoningEffort) {
+        body.reasoning_effort = settings.reasoningEffort;
+    }
 
     if (systemInstruction) {
         body.systemInstruction = {
@@ -1053,6 +1195,160 @@ function renderImagePreviews() {
 function clearSelectedImages() {
     selectedImages = [];
     renderImagePreviews();
+}
+
+// --- Speech Recognition ---
+
+const SPEECH_LANG_MAP = { 'zh-CN': 'zh-CN', 'en': 'en-US', 'es': 'es-ES' };
+
+let speechAccumulator = '';
+let speechFlushTimer = null;
+
+function flushAccumulator() {
+    if (!speechAccumulator.trim()) return;
+    const t = speechAccumulator;
+    speechAccumulator = '';
+    els.chatInput.value = t;
+    sendMessage();
+}
+
+function scheduleFlush() {
+    clearTimeout(speechFlushTimer);
+    speechFlushTimer = setTimeout(flushAccumulator, speechConfig.silenceTimeout);
+}
+
+function updatePlaceholder() {
+    const acc = speechAccumulator.trim();
+    els.chatInput.placeholder = acc ? '🎤 [' + acc + ']' : t('inputPlaceholder');
+}
+
+function createSpeechRecognizer() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        els.micBtn.style.display = 'none';
+        return null;
+    }
+    const sr = new SpeechRecognition();
+    sr.continuous = false;
+    sr.interimResults = true;
+    sr.lang = SPEECH_LANG_MAP[speechConfig.lang] || 'en-US';
+    return sr;
+}
+
+function startRecording() {
+    speechAccumulator = '';
+    speechFlushTimer = null;
+    isRecording = true;
+    els.micBtn.classList.add('recording');
+    els.micBtn.title = t('stopRecording');
+    updatePlaceholder();
+    startSpeechSession();
+}
+
+function startSpeechSession() {
+    if (!isRecording) return;
+
+    const sr = createSpeechRecognizer();
+    if (!sr) { stopRecording(); return; }
+
+    let speechBuffer = '';
+
+    sr.onresult = (event) => {
+        const result = event.results[event.results.length - 1];
+        speechBuffer = result[0].transcript;
+        els.chatInput.placeholder = '🎤 [' + speechAccumulator + (speechAccumulator && speechBuffer ? ' ' : '') + speechBuffer + ']';
+    };
+
+    sr.onerror = (event) => {
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+            stopRecording();
+        } else if (isRecording) {
+            setTimeout(startSpeechSession, 200);
+        }
+    };
+
+    sr.onend = () => {
+        if (speechBuffer.trim()) {
+            const punct = speechConfig.lang === 'zh-CN' ? '。' : '. ';
+            if (speechAccumulator) speechAccumulator += punct;
+            speechAccumulator += speechBuffer.trim();
+            scheduleFlush();
+            updatePlaceholder();
+        }
+        if (isRecording) {
+            setTimeout(startSpeechSession, 100);
+        }
+    };
+
+    try {
+        sr.start();
+        recognition = sr;
+    } catch(e) {
+        console.error('Speech start failed:', e);
+        if (isRecording) {
+            setTimeout(startSpeechSession, 500);
+        }
+    }
+}
+
+function stopRecording() {
+    isRecording = false;
+    if (recognition) {
+        try {
+            recognition.onend = null;
+            recognition.stop();
+        } catch(e) {}
+    }
+    recognition = null;
+    clearTimeout(speechFlushTimer);
+    flushAccumulator();
+    els.micBtn.classList.remove('recording');
+    els.micBtn.title = t('startRecording');
+    els.chatInput.placeholder = t('inputPlaceholder');
+}
+
+// --- Speech Config Modal ---
+
+function openSpeechConfig() {
+    if (isRecording) { stopRecording(); return; }
+    els.speechModal.classList.remove('hidden');
+    renderSpeechConfig();
+}
+
+function renderSpeechConfig() {
+    const lang = speechConfig.lang;
+    els.speechLangOptions.querySelectorAll('.speech-lang-option').forEach(btn => {
+        btn.classList.toggle('selected', btn.dataset.lang === lang);
+    });
+    els.speechSensitivity.value = speechConfig.silenceTimeout;
+    els.speechSensitivityValue.textContent = speechConfig.silenceTimeout + 'ms';
+
+    els.speechLangOptions.querySelectorAll('.speech-lang-option').forEach(btn => {
+        btn.onclick = () => {
+            els.speechLangOptions.querySelectorAll('.speech-lang-option').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            speechConfig.lang = btn.dataset.lang;
+        };
+    });
+
+    els.speechSensitivity.oninput = () => {
+        const val = parseInt(els.speechSensitivity.value);
+        speechConfig.silenceTimeout = val;
+        els.speechSensitivityValue.textContent = val + 'ms';
+    };
+
+    els.speechStartBtn.onclick = () => {
+        els.speechModal.classList.add('hidden');
+        startRecording();
+    };
+}
+
+function toggleRecording() {
+    if (isRecording) {
+        stopRecording();
+    } else {
+        openSpeechConfig();
+    }
 }
 
 // Convert messages to API format with multimodal content
@@ -1207,6 +1503,9 @@ function setupEventListeners() {
         els.imageInput.value = ''; // Reset to allow selecting same file again
     });
 
+    // Speech recognition
+    els.micBtn.addEventListener('click', toggleRecording);
+
     els.clearBtn.addEventListener('click', () => {
         const ctx = getCurrentContext();
         if(ctx) {
@@ -1218,6 +1517,8 @@ function setupEventListeners() {
     
     els.modelSelect.addEventListener('change', updateCurrentContextModel);
     els.thinkingToggleBtn.addEventListener('click', toggleThinking);
+    els.statsToggleBtn.addEventListener('click', toggleStats);
+    els.alignToggleBtn.addEventListener('click', toggleMessageAlign);
     els.configBtn.addEventListener('click', openApiModal);
     
     document.addEventListener('click', () => els.contextMenu.classList.add('hidden'));
@@ -1753,6 +2054,7 @@ function openContextConfig() {
     els.ctxTemp.value = ctx.temperature;
     els.ctxTopP.value = ctx.topP;
     els.ctxParams.value = ctx.customParams || '{}';
+    els.ctxReasoningEffort.value = ctx.reasoningEffort || '';
     
     els.ctxModal.dataset.editingId = id;
     els.ctxModal.classList.remove('hidden');
@@ -1767,6 +2069,7 @@ async function saveContextConfig() {
         ctx.maxHistory = parseInt(els.ctxMaxHistory.value) || 0;
         ctx.temperature = parseFloat(els.ctxTemp.value);
         ctx.topP = parseFloat(els.ctxTopP.value);
+        ctx.reasoningEffort = els.ctxReasoningEffort.value.trim();
         
         try {
             const paramsVal = els.ctxParams.value;

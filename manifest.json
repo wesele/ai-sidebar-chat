@@ -8,9 +8,7 @@
     "storage"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "https://chat.deepseek.com/*",
-    "https://qwen.aikit.club/*"
+    "<all_urls>"
   ],
 
   "side_panel": {
