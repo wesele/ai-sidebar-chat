@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Sidebar Chat",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A Gemini-style AI chat sidebar extension.",
   "permissions": [
     "sidePanel",
@@ -12,17 +12,25 @@
   ],
 
   "side_panel": {
-    "default_path": "sidepanel.html"
+    "default_path": "dist/sidepanel.html"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "dist/background.js",
+    "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_title": "Open AI Sidebar"
   },
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "dist/icons/icon16.png",
+    "48": "dist/icons/icon48.png",
+    "128": "dist/icons/icon128.png"
   }
 }

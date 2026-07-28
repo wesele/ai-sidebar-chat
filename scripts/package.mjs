@@ -1,0 +1,10 @@
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+const manifest = JSON.parse(await readFile('manifest/chrome.json', 'utf8'));
+await mkdir('dist/icons', { recursive: true });
+await cp('icons', 'dist/icons', { recursive: true });
+await mkdir('dist/src/sidepanel', { recursive: true });
+await cp('styles.css', 'dist/styles.css');
+await cp('src/sidepanel/writing-assistant.css', 'dist/src/sidepanel/writing-assistant.css');
+const sidePanelHtml = await readFile('sidepanel.html', 'utf8');
+await writeFile('dist/sidepanel.html', sidePanelHtml.replace('./dist/sidepanel.js', './sidepanel.js'));
+await writeFile('dist/manifest.json', JSON.stringify(manifest, null, 2));

@@ -1,0 +1,2 @@
+import { test, expect } from '@playwright/test';
+test('fixture exposes the three supported editor kinds and sensitive exclusion fixture', async ({ page }) => { await page.goto(new URL('./fixtures/editor.html', import.meta.url).href); await expect(page.locator('#editor')).toBeEditable(); await expect(page.locator('#natural')).toBeEditable(); await expect(page.locator('#editable')).toBeEditable(); await expect(page.locator('#password')).toHaveAttribute('type', 'password'); });

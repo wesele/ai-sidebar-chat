@@ -4,12 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Sidebar</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="src/sidepanel/writing-assistant.css">
 </head>
 <body class="gemini-theme">
+  <nav id="primary-tabs" aria-label="主导航">
+    <button type="button" data-primary-tab="writing" role="tab" aria-selected="false">写作助手</button>
+    <button type="button" data-primary-tab="tools" role="tab" aria-selected="true">AI 工具</button>
+  </nav>
+  <main id="writing-assistant-panel" role="tabpanel" hidden></main>
   <div id="app-container">
     <!-- Top Context Bar -->
     <div id="context-bar-container">
@@ -29,14 +32,19 @@
     <!-- Bottom Input Area -->
     <div id="input-area-wrapper">
       <div id="input-controls">
-        <button id="config-btn" class="text-btn">API配置</button>
         <select id="model-select">
           <option value="" disabled selected>选择模型...</option>
         </select>
-        <button id="thinking-toggle-btn" class="toggle-btn default" title="NVIDIA 思考参数 (默认/开/关)">默认</button>
-        <button id="stats-toggle-btn" class="toggle-btn on" title="显示时间/速度指标">📊</button>
-        <button id="align-toggle-btn" class="toggle-btn" title="消息对齐方式">⇄</button>
-        <button id="clear-btn" class="text-btn" title="清空当前上下文消息">清空</button>
+        <button id="thinking-toggle-btn" class="toggle-btn default" title="DeepSeek 思考参数 (默认/关闭)">默认</button>
+        <div id="more-menu-wrap" class="more-menu-wrap">
+          <button id="more-btn" class="text-btn" type="button" aria-haspopup="menu" aria-expanded="false">更多</button>
+          <div id="more-menu" class="more-menu hidden" role="menu" aria-label="更多操作">
+            <button id="config-btn" class="more-menu-item" type="button" role="menuitem">API配置</button>
+            <button id="stats-toggle-btn" class="more-menu-item on" type="button" role="menuitem" title="显示时间/速度指标">时间指标</button>
+            <button id="align-toggle-btn" class="more-menu-item" type="button" role="menuitem" title="消息对齐方式">对齐</button>
+            <button id="clear-btn" class="more-menu-item" type="button" role="menuitem" title="清空当前上下文消息">清空</button>
+          </div>
+        </div>
       </div>
       <div id="input-box-container">
         <div id="image-preview-container" class="hidden">
@@ -226,6 +234,6 @@
     </div>
   </div>
 
-  <script src="script.js"></script>
+  <script type="module" src="./dist/sidepanel.js"></script>
 </body>
 </html>

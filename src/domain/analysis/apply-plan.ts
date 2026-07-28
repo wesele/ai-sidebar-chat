@@ -1,0 +1,3 @@
+export interface Replacement { start: number; end: number; original: string; replacement: string; }
+export interface ApplyPlanResult { text: string; applied: number; skipped: number; }
+export function applyPlan(text: string, replacements: Replacement[]): ApplyPlanResult { let output = text; let applied = 0; let skipped = 0; let previousStart = Number.POSITIVE_INFINITY; for (const r of [...replacements].sort((a, b) => b.start - a.start)) { if (r.start < 0 || r.end < r.start || r.end > output.length || r.end > previousStart || output.slice(r.start, r.end) !== r.original) { skipped += 1; continue; } output = output.slice(0, r.start) + r.replacement + output.slice(r.end); previousStart = r.start; applied += 1; } return { text: output, applied, skipped }; }

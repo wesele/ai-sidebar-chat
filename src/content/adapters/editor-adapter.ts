@@ -1,0 +1,3 @@
+import type { EditorSnapshot, SourceKind } from '../../domain/text/snapshot'; import type { Replacement } from '../../domain/analysis/apply-plan'; import type { TextRange } from '../../domain/text/paragraph-segmenter';
+export interface ApplyResult { applied: number; skipped: number; }
+export interface EditorAdapter { readonly kind: SourceKind; readonly element: HTMLElement; readSnapshot(): Readonly<EditorSnapshot>; getCaretGeometry(): DOMRect | null; getRangeGeometry(range: TextRange): DOMRect[]; replaceRanges(replacements: Replacement[]): ApplyResult; observe(callback: () => void): () => void; }

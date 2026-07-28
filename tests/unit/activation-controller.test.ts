@@ -1,0 +1,2 @@
+import { describe, expect, it } from 'vitest'; import { ActivationController } from '../../src/content/activation-controller';
+describe('activation lifecycle', () => { it('starts always, follows panel_open, and resumes when always restored', () => { const c = new ActivationController(); expect(c.active()).toBe(true); expect(c.update('panel_open')).toBe('stop'); expect(c.panel(true)).toBe('start'); expect(c.panel(false)).toBe('stop'); expect(c.update('always')).toBe('start'); expect(c.active()).toBe(true); }); });

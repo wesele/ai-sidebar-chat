@@ -11,6 +11,10 @@
 
 A Gemini-style AI chat sidebar extension for Chrome (Manifest V3).
 
+### Writing assistant development
+
+The new writing assistant is implemented under `src/` with a DOM-free text/analysis domain, content-script owned ephemeral document cache, a background-only provider transport, and a read-only Side Panel projection. Run `npm.cmd install`, then `npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd test`, `npm.cmd run build`, and (where Chrome/Edge are installed) `npm.cmd run test:e2e`. The packaged-extension smoke additionally requires `RUN_EXTENSION_E2E=1` and a browser channel that permits side-loaded MV3 extensions; it uses only the local fake provider in `scripts/fixture-server.mjs`. Packaged manifests are in `manifest/`; the legacy root panel remains available while the Vite build emits the new module entries.
+
 ### Features
 
 - Side panel chat interface
@@ -31,13 +35,19 @@ A Gemini-style AI chat sidebar extension for Chrome (Manifest V3).
    git clone https://github.com/wesele/ai-sidebar-chat.git
    ```
 
-2. Open Chrome and navigate to `chrome://extensions/`
+2. Install dependencies and build the extension:
+   ```bash
+   npm install
+   npm run build
+   ```
 
-3. Enable "Developer mode" (toggle in top-right corner)
+3. Open Chrome and navigate to `chrome://extensions/`
 
-4. Click "Load unpacked" and select the cloned directory
+4. Enable "Developer mode" (toggle in top-right corner)
 
-5. Click the extension icon to open the sidebar chat
+5. Click "Load unpacked" and select the generated `dist` directory (not the source repository root)
+
+6. Click the extension icon to open the sidebar chat
 
 ### Usage
 

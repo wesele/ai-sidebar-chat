@@ -53,8 +53,11 @@ const translations = {
     welcome: 'Select or create a chat context to start.',
     newChat: 'New Chat',
     apiConfig: 'API Config',
+    more: 'More',
+    timingMetrics: 'Timing metrics',
+    alignment: 'Alignment',
     selectModel: 'Select model...',
-    thinkingToggle: 'NVIDIA Thinking (Default=no param, ON=auto, OFF=off)',
+    thinkingToggle: 'DeepSeek Thinking (默认/关闭)',
     clear: 'Clear',
     inputPlaceholder: 'Enter message... (Shift+Enter for new line)',
     send: 'Send',
@@ -114,7 +117,7 @@ const translations = {
     newChat: '新聊天',
     apiConfig: 'API配置',
     selectModel: '选择模型...',
-    thinkingToggle: 'NVIDIA 思考参数 (默认=不传参, 开=自动, 关=关闭)',
+    thinkingToggle: 'DeepSeek 思考参数 (默认/关闭)',
     clear: '清空',
     inputPlaceholder: '输入消息... (Shift+Enter 换行)',
     send: '发送',
@@ -173,8 +176,11 @@ const translations = {
     welcome: 'Selecciona o crea un chat para comenzar.',
     newChat: 'Nuevo Chat',
     apiConfig: 'Config. API',
+    more: 'Más',
+    timingMetrics: 'Métricas de tiempo',
+    alignment: 'Alineación',
     selectModel: 'Seleccionar modelo...',
-    thinkingToggle: 'Pensamiento NVIDIA (Default=sin param, ON=auto, OFF=apagado)',
+    thinkingToggle: 'Pensamiento DeepSeek (Default/Apagado)',
     clear: 'Limpiar',
     inputPlaceholder: 'Escribe un mensaje... (Shift+Enter para nueva línea)',
     send: 'Enviar',
@@ -245,6 +251,11 @@ function applyTranslations() {
   // Add context button title
   if (els.addContextBtn) els.addContextBtn.title = t('newChat');
   
+  // More menu
+  if (els.moreBtn) {
+    els.moreBtn.textContent = currentLang === 'zh-CN' ? '\u66f4\u591a' : t('more');
+  }
+
   // Config button
   if (els.configBtn) els.configBtn.textContent = t('apiConfig');
   
@@ -360,7 +371,7 @@ let allAvailableModels = []; // Store all fetched models for filtering
 let abortController = null;
 let isGenerating = false;
 let sendCount = 0;
-let thinkingMode = 'default'; // Three modes: 'default', 'on', 'off'
+let thinkingMode = 'default'; // Two modes: 'default', 'off'
 let showStats = true;
 let messageAlign = 'left-right'; // 'left-right' or 'both-left'
 
@@ -368,6 +379,11 @@ let speechConfig = {
   lang: currentLang === 'zh-CN' ? 'zh-CN' : currentLang === 'es' ? 'es' : 'en',
   silenceTimeout: 600
 };
+
+// History navigation state
+let messageHistory = [];
+let historyIndex = -1;
+let historyBeforeNavigation = '';
 
 // DOM Elements
 const els = {
@@ -383,6 +399,8 @@ const els = {
   thinkingToggleBtn: document.getElementById('thinking-toggle-btn'),
   statsToggleBtn: document.getElementById('stats-toggle-btn'),
   alignToggleBtn: document.getElementById('align-toggle-btn'),
+  moreBtn: document.getElementById('more-btn'),
+  moreMenu: document.getElementById('more-menu'),
   configBtn: document.getElementById('config-btn'),
   clearBtn: document.getElementById('clear-btn'),
   addContextBtn: document.getElementById('add-context-btn'),
@@ -528,6 +546,10 @@ async function createNewContext() {
 }
 
 function switchContext(id) {
+  messageHistory = [];
+  historyIndex = -1;
+  historyBeforeNavigation = '';
+
   state.currentContextId = id;
   saveState();
   
@@ -597,8 +619,7 @@ function toggleMessageAlign() {
 
 function updateAlignButton() {
   if (!els.alignToggleBtn) return;
-  const titles = { 'left-right': '⇄', 'both-left': '←' };
-  els.alignToggleBtn.textContent = titles[messageAlign] || '⇄';
+  els.alignToggleBtn.textContent = currentLang === 'zh-CN' ? '\u5bf9\u9f50' : t('alignment');
   els.alignToggleBtn.classList.toggle('on', messageAlign === 'both-left');
   els.alignToggleBtn.title = messageAlign === 'left-right' ? t('messageAlignLeftRight') : t('messageAlignBothLeft');
 }
@@ -608,15 +629,13 @@ function updateMessageAlignment() {
 }
 
 function toggleThinking() {
-  const modes = ['default', 'on', 'off'];
-  const currentIdx = modes.indexOf(thinkingMode);
-  thinkingMode = modes[(currentIdx + 1) % modes.length];
+  thinkingMode = thinkingMode === 'default' ? 'off' : 'default';
   updateThinkingButton();
 }
 
 function updateThinkingButton() {
   if (!els.thinkingToggleBtn) return;
-  const labels = { default: '默认', on: '开', off: '关' };
+  const labels = { default: '默认', off: '关' };
   els.thinkingToggleBtn.textContent = labels[thinkingMode] || '默认';
   els.thinkingToggleBtn.className = 'toggle-btn';
   if (thinkingMode !== 'default') {
@@ -632,8 +651,15 @@ function toggleStats() {
 
 function updateStatsButton() {
   if (!els.statsToggleBtn) return;
+  els.statsToggleBtn.textContent = currentLang === 'zh-CN' ? '\u65f6\u95f4\u6307\u6807' : t('timingMetrics');
   els.statsToggleBtn.classList.toggle('on', showStats);
   els.statsToggleBtn.title = showStats ? t('statsToggleOn') : t('statsToggleOff');
+}
+
+function setMoreMenuOpen(open) {
+  if (!els.moreMenu || !els.moreBtn) return;
+  els.moreMenu.classList.toggle('hidden', !open);
+  els.moreBtn.setAttribute('aria-expanded', String(open));
 }
 
 // --- Rendering ---
@@ -691,7 +717,8 @@ function renderMessageContent(msg) {
         if (msg.images && msg.images.length > 0) {
             html += '<div class="message-images">';
             msg.images.forEach(img => {
-                html += `<img src="${img.data}" alt="${img.name}" class="message-image">`;
+                const src = typeof img.data === 'string' && (/^data:image\//i.test(img.data) || /^https:\/\//i.test(img.data)) ? img.data : '';
+                html += `<img src="${escapeHtml(src)}" alt="${escapeHtml(img.name || '')}" class="message-image">`;
             });
             html += '</div>';
         }
@@ -916,7 +943,8 @@ async function sendMessage() {
        ctx.messages.push(assistantMsg);
        await saveState();
     } else {
-       msgDiv.innerHTML += `<br><span style="color:red">Error: ${err.message}</span>`;
+       ctx.messages.pop();
+       msgDiv.innerHTML += `<br><span style="color:red">Error: ${escapeHtml(err.message)}</span>`;
     }
   } finally {
     sendCount--;
@@ -957,11 +985,9 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
         body.reasoning_effort = settings.reasoningEffort;
     }
     
-    // Handle thinking parameter: default=no param, on=auto, off=explicitly disable
+    // Handle thinking parameter: default=no param, off=explicitly disable (DeepSeek)
     if (thinkingMode === 'off') {
-        body.chat_template_kwargs = { enable_thinking: false };
-    } else if (thinkingMode === 'on') {
-        body.chat_template_kwargs = { enable_thinking: true };
+        body.thinking = { type: "disabled" };
     }
     // default: no parameter (let API decide)
 
@@ -969,10 +995,12 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${provider.apiKey}`
+            'Authorization': `Bearer ${provider.apiKey}`,
+            'Cache-Control': 'no-cache'
         },
         body: JSON.stringify(body),
-        signal
+        signal,
+        cache: 'no-cache'
     });
 
     if (!response.ok) {
@@ -1097,10 +1125,12 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'x-goog-api-key': provider.apiKey
+            'x-goog-api-key': provider.apiKey,
+            'Cache-Control': 'no-cache'
         },
         body: JSON.stringify(body),
-        signal
+        signal,
+        cache: 'no-cache'
     });
 
     if (!response.ok) {
@@ -1381,20 +1411,26 @@ function formatMessagesForAPI(messages) {
                 content: content
             };
         }
-        return msg;
+        return { role: msg.role, content: msg.content || '' };
     });
 }
 
 function parseMarkdown(text) {
   if (!text) return '';
-  let safeText = text.replace(/</g, '<').replace(/>/g, '>');
-  safeText = safeText.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+  let safeText = escapeHtml(String(text));
+  const codeBlocks = [];
+  safeText = safeText.replace(/```([\s\S]*?)```/g, (_, code) => {
+    const token = `\u0000CODE${codeBlocks.length}\u0000`;
+    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    return token;
+  });
   safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  const parts = safeText.split(/(<pre>[\s\S]*?<\/pre>)/g);
-  return parts.map(part => {
-      if (part.startsWith('<pre>')) return part;
-      return part.replace(/\n/g, '<br>');
-  }).join('');
+  safeText = safeText.replace(/\n/g, '<br>');
+  return safeText.replace(/\u0000CODE(\d+)\u0000/g, (_, index) => codeBlocks[Number(index)] || '');
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function adjustInputHeight() {
@@ -1452,8 +1488,43 @@ function setupEventListeners() {
         };
     });
     
-    els.chatInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+els.chatInput.addEventListener('keydown', (e) => {
+  // History navigation with Up/Down arrows
+  if (e.key === 'ArrowUp' && !e.shiftKey) {
+    const ctx = getCurrentContext();
+    const liveMsgs = ctx ? ctx.messages.filter(m => m.role === 'user' && m.content && m.content !== '[图片]') : [];
+    const pool = liveMsgs.length > 0 ? liveMsgs : messageHistory.map(c => ({ content: c }));
+    if (pool.length === 0) return;
+    e.preventDefault();
+    if (historyIndex === -1) {
+      historyBeforeNavigation = els.chatInput.value;
+    }
+    if (historyIndex < pool.length - 1) {
+      historyIndex++;
+      els.chatInput.value = pool[pool.length - 1 - historyIndex].content;
+    }
+    adjustInputHeight();
+    return;
+  }
+
+  if (e.key === 'ArrowDown' && !e.shiftKey) {
+    const ctx = getCurrentContext();
+    if (historyIndex === -1) return;
+    const liveMsgs = ctx ? ctx.messages.filter(m => m.role === 'user' && m.content && m.content !== '[图片]') : [];
+    const pool = liveMsgs.length > 0 ? liveMsgs : messageHistory.map(c => ({ content: c }));
+    e.preventDefault();
+    if (historyIndex > 0) {
+      historyIndex--;
+      els.chatInput.value = pool[pool.length - 1 - historyIndex].content;
+    } else {
+      historyIndex = -1;
+      els.chatInput.value = historyBeforeNavigation;
+    }
+    adjustInputHeight();
+    return;
+  }
+
+  if (e.key === 'Enter') {
             if (e.shiftKey) {
                 setTimeout(adjustInputHeight, 0);
             } else {
@@ -1461,18 +1532,28 @@ function setupEventListeners() {
                 sendMessage();
             }
         }
-        if (e.key === 'Delete' && e.ctrlKey) {
-            e.preventDefault();
-            const ctx = getCurrentContext();
-            if(ctx) {
-                ctx.messages = [];
-                saveState();
-                renderMessages([]);
-            }
-        }
+  if (e.key === 'Delete' && e.ctrlKey) {
+    e.preventDefault();
+    const ctx = getCurrentContext();
+    if (ctx) {
+      messageHistory = ctx.messages.filter(m => m.role === 'user' && m.content && m.content !== '[图片]').map(m => m.content);
+      historyIndex = -1;
+      historyBeforeNavigation = '';
+      ctx.messages = [];
+      saveState();
+      renderMessages([]);
+    }
+    return;
+  }
     });
     
-    els.chatInput.addEventListener('input', adjustInputHeight);
+    els.chatInput.addEventListener('input', () => {
+  adjustInputHeight();
+  if (historyIndex !== -1) {
+    historyIndex = -1;
+    historyBeforeNavigation = '';
+  }
+});
     
     els.sendBtn.addEventListener('click', () => {
         if (isGenerating && abortController) {
@@ -1520,8 +1601,23 @@ function setupEventListeners() {
     els.statsToggleBtn.addEventListener('click', toggleStats);
     els.alignToggleBtn.addEventListener('click', toggleMessageAlign);
     els.configBtn.addEventListener('click', openApiModal);
+
+    els.moreBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setMoreMenuOpen(els.moreMenu.classList.contains('hidden'));
+    });
+    els.moreMenu.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setMoreMenuOpen(false);
+    });
     
-    document.addEventListener('click', () => els.contextMenu.classList.add('hidden'));
+    document.addEventListener('click', () => {
+        els.contextMenu.classList.add('hidden');
+        setMoreMenuOpen(false);
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') setMoreMenuOpen(false);
+    });
     
     document.querySelectorAll('.close-modal-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -1647,13 +1743,13 @@ function renderModelsList(provider) {
         if (isBuiltin) {
             // Builtin provider models are readonly
             modelItem.innerHTML = `
-                <span class="model-name">${model}</span>
+                <span class="model-name">${escapeHtml(model)}</span>
             `;
         } else {
             // Normal provider models can be deleted
             modelItem.innerHTML = `
-                <span class="model-name">${model}</span>
-                <button class="delete-model-btn" data-model="${model}" title="删除模型">×</button>
+                <span class="model-name">${escapeHtml(model)}</span>
+                <button class="delete-model-btn" data-model="${escapeHtml(model)}" title="删除模型">×</button>
             `;
             
             // Delete button click handler
@@ -1692,7 +1788,7 @@ function renderProviderForm() {
     let formHtml = `
         <div class="form-group">
             <label>名称</label>
-            <input type="text" id="p-edit-name" value="${p.name}" ${isDefault || isBuiltin ? 'readonly' : ''}>
+            <input type="text" id="p-edit-name" value="${escapeHtml(p.name)}" ${isDefault || isBuiltin ? 'readonly' : ''}>
         </div>
         <div class="form-group">
             <label>API Type</label>
@@ -1705,15 +1801,15 @@ function renderProviderForm() {
     formHtml += `
         <div class="form-group" id="p-edit-url-group"${apiType === 'gemini' ? ' style="display:none"' : ''}>
             <label>Base URL</label>
-            <input type="text" id="p-edit-url" value="${p.baseUrl}">
+            <input type="text" id="p-edit-url" value="${escapeHtml(p.baseUrl)}">
         </div>`;
     
     formHtml += `
         <div class="form-group">
             <label>API Key</label>
             <div class="password-input-wrapper">
-                <input type="password" id="p-edit-key" value="${p.apiKey}">
-                <button id="toggle-key-visibility-btn" class="icon-btn" title="显示/隐藏 API Key">👁️</button>
+                <input type="password" id="p-edit-key" autocomplete="new-password" value="${escapeHtml(p.apiKey || '')}">
+                <button type="button" id="toggle-key-visibility-btn" class="icon-btn" title="显示/隐藏 API Key">👁️</button>
             </div>
         </div>
         <div class="form-group" id="p-edit-google-search-group"${apiType !== 'gemini' ? ' style="display:none"' : ''}>
@@ -1770,7 +1866,7 @@ function renderProviderForm() {
     if (testBtn) {
         testBtn.addEventListener('click', () => {
             const baseUrl = urlInput ? urlInput.value : (p.baseUrl || 'https://generativelanguage.googleapis.com/v1beta');
-            fetchModelsAndShowModal(baseUrl, keyInput.value, apiTypeSelect ? apiTypeSelect.value : 'openai');
+            fetchModelsAndShowModal(baseUrl, keyInput.value || p.apiKey, apiTypeSelect ? apiTypeSelect.value : 'openai');
         });
     }
     
@@ -1829,7 +1925,7 @@ function renderProviderForm() {
         if (googleSearchCheckbox) {
             p.googleSearch = googleSearchCheckbox.checked;
         }
-        p.apiKey = keyInput.value;
+        if (keyInput.value) p.apiKey = keyInput.value;
         renderProvidersList(); 
     };
 
@@ -1944,8 +2040,8 @@ function renderModelCheckboxList(models, filterText = '') {
         div.className = 'checkbox-item';
         const isChecked = existingModels.has(m);
         div.innerHTML = `
-            <input type="checkbox" value="${m}" id="model-cb-${m}" ${isChecked ? 'checked' : ''}>
-            <label for="model-cb-${m}">${m}</label>
+            <input type="checkbox" value="${escapeHtml(m)}" id="model-cb-${escapeHtml(m)}" ${isChecked ? 'checked' : ''}>
+            <label for="model-cb-${escapeHtml(m)}">${escapeHtml(m)}</label>
         `;
         // Allow clicking div to toggle
         div.addEventListener('click', (e) => {

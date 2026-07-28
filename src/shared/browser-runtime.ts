@@ -1,0 +1,11 @@
+import type { RuntimeMessage } from './messages';
+export interface SettingsStorage {
+  get<T>(key: string): Promise<T | undefined>;
+  set<T>(key: string, value: T): Promise<void>;
+  onChanged?(listener: (key: string, value: unknown) => void): void;
+}
+export interface TypedMessaging { send(message: RuntimeMessage): Promise<unknown>; onMessage(listener: (message: RuntimeMessage, sender: chrome.runtime.MessageSender) => void): void; }
+export interface SidePanelCapability { open(tabId?: number): Promise<void>; setActionBehavior?(): Promise<void>; }
+export interface TabCapability { active(): Promise<{ id: number } | undefined>; send(tabId: number, message: RuntimeMessage): Promise<void>; onActivated?(listener: (tabId: number) => void): void; }
+export interface BrowserRuntime { storage: SettingsStorage; messaging: TypedMessaging; sidePanel: SidePanelCapability; tabs: TabCapability; }
+export function chromeRuntime(): BrowserRuntime { return { storage: { async get<T>(key: string) { return (await chrome.storage.local.get(key))[key] as T | undefined; }, async set<T>(key: string, value: T) { await chrome.storage.local.set({ [key]: value }); }, onChanged(listener) { chrome.storage.onChanged.addListener((changes, areaName) => { if (areaName !== 'local') return; for (const [key, change] of Object.entries(changes)) listener(key, change.newValue); }); } }, messaging: { send: message => chrome.runtime.sendMessage(message), onMessage: listener => chrome.runtime.onMessage.addListener((m, s) => { if ((m as RuntimeMessage).v === 1) listener(m as RuntimeMessage, s); }) }, sidePanel: { async open(tabId) { if (tabId !== undefined) { await chrome.sidePanel.open({ tabId }); return; } const tabs = await chrome.tabs.query({ active: true, currentWindow: true }); const windowId = tabs[0]?.windowId; if (windowId === undefined) throw new Error('No active window'); await chrome.sidePanel.open({ windowId }); }, async setActionBehavior() { await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }); } }, tabs: { async active() { const tabs = await chrome.tabs.query({ active: true, currentWindow: true }); return tabs[0]?.id === undefined ? undefined : { id: tabs[0].id }; }, async send(tabId, message) { await chrome.tabs.sendMessage(tabId, message); }, onActivated(listener) { chrome.tabs.onActivated.addListener(({ tabId }) => listener(tabId)); } } }; }

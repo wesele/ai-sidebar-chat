@@ -1,0 +1,2 @@
+import { describe, expect, it } from 'vitest'; import { shouldRouteToContent } from '../../src/background/message-router';
+describe('background panel router', () => { it('routes panel commands but never loops content commands', () => { const message = { v: 1 as const, type: 'APPLY_ALL' as const, correlationId: 'x', payload: { tabId: 7, editorId: 'e', revision: 1, scope: 'sentence' as const, expectedCount: 2 } }; expect(shouldRouteToContent(message, undefined)).toBe(true); expect(shouldRouteToContent(message, 7)).toBe(false); }); });
