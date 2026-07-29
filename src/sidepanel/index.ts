@@ -26,12 +26,12 @@ function init(): void {
       });
     },
     (type, payload) => {
-      if (type === 'RETRY_DETECTION') {
+      if (type === 'RETRY_DETECTION' || type === 'REQUEST_FULL_ANALYSIS') {
         send({
           v: 1,
           type,
           correlationId: crypto.randomUUID(),
-          payload: payload as Extract<ExtensionMessage, { type: 'RETRY_DETECTION' }>['payload'],
+          payload: payload as Extract<ExtensionMessage, { type: 'RETRY_DETECTION' | 'REQUEST_FULL_ANALYSIS' }>['payload'],
         });
       } else if (type === 'APPLY_ISSUE') {
         send({

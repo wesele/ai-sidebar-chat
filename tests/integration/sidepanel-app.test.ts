@@ -120,7 +120,7 @@ describe('writing side panel', () => {
       .dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
     expect(persist).toHaveBeenCalledWith({
       providerId: 'p', modelId: 'm', invocationStrategy: 'parallel', maxConcurrency: 5,
-      activationMode: 'panel_open', fullDocumentCharacterLimit: 1234,
+      activationMode: 'panel_open', fullDocumentCharacterLimit: 1234, targetLanguage: 'EN',
     });
   });
 
@@ -138,7 +138,7 @@ describe('writing side panel', () => {
 
     const errorText = root.querySelector<HTMLElement>('[data-writing-error-text="true"]');
     expect(errorText).not.toBeNull();
-    expect(errorText?.textContent).toBe('检测失败，可在设置中重试');
+    expect(errorText?.textContent).toBe('检测失败（点击查看原因）');
 
     const retryBtn = root.querySelector<HTMLButtonElement>('[data-writing-retry-button="true"]');
     expect(retryBtn).not.toBeNull();
@@ -162,5 +162,48 @@ describe('writing side panel', () => {
     modalRetryBtn?.click();
     expect(command).toHaveBeenCalledTimes(2);
     expect(root.querySelector('[data-writing-error-modal="true"]')).toBeNull();
+  });
+
+  it('renders grey 全文 button when untriggered and sends REQUEST_FULL_ANALYSIS command on click', () => {
+    const root = document.createElement('div');
+    const command = vi.fn();
+    const panel = new WritingAssistantPanel(root, vi.fn(async () => undefined), command);
+    panel.setState({
+      editorId: 'e',
+      revision: 1,
+      status: 'analyzed',
+      counts: { sentence: 1 },
+    }, 7);
+
+    const fullBtn = Array.from(root.querySelectorAll('button')).find((button) => button.textContent?.includes('全文'))!;
+    expect(fullBtn).not.toBeUndefined();
+    expect(fullBtn.classList.contains('wa-count-btn-gray')).toBe(true);
+
+    fullBtn.click();
+    expect(command).toHaveBeenCalledWith('REQUEST_FULL_ANALYSIS', { tabId: 7 });
+  });
+
+  it('renders writing language selector with EN, ES, CN options and config icon button', () => {
+    const root = document.createElement('div');
+    const persist = vi.fn(async () => undefined);
+    const panel = new WritingAssistantPanel(root, persist, vi.fn());
+    panel.setSettings({ targetLanguage: 'ES' });
+
+    const langSelect = root.querySelector<HTMLSelectElement>('[data-writing-language-select="true"]');
+    expect(langSelect).not.toBeNull();
+    expect(langSelect?.value).toBe('ES');
+    const options = Array.from(langSelect?.options ?? []).map((o) => o.value);
+    expect(options).toEqual(['EN', 'ES', 'CN']);
+
+    // Config button should be an icon button without text
+    const configBtn = root.querySelector<HTMLButtonElement>('[data-writing-settings-button="true"]');
+    expect(configBtn).not.toBeNull();
+    expect(configBtn?.textContent?.trim()).toBe('');
+    expect(configBtn?.querySelector('svg')).not.toBeNull();
+
+    // Changing language triggers persist
+    langSelect!.value = 'CN';
+    langSelect!.dispatchEvent(new Event('change'));
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'CN' }));
   });
 });

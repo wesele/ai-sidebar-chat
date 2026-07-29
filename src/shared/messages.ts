@@ -45,6 +45,8 @@ export interface EditorViewState {
   errorReason?: string;
 }
 
+export type TargetLanguage = 'EN' | 'ES' | 'CN';
+
 export type SettingsPayload = {
   providerId: string;
   modelId: string;
@@ -52,6 +54,7 @@ export type SettingsPayload = {
   maxConcurrency: number;
   activationMode: 'always' | 'panel_open';
   fullDocumentCharacterLimit: number;
+  targetLanguage: TargetLanguage;
 };
 
 export type ApplyResultPayload = {
@@ -88,7 +91,8 @@ export type ExtensionMessage =
   | { v: 1; type: 'APPLY_RESULT'; correlationId: string; payload: ApplyResultPayload }
   | { v: 1; type: 'OPEN_SIDE_PANEL'; correlationId: string; payload: { tabId: number } }
   | { v: 1; type: 'PANEL_CONNECTION_CHANGED'; correlationId: string; payload: { open: boolean } }
-  | { v: 1; type: 'RETRY_DETECTION'; correlationId: string; payload: { tabId?: number } };
+  | { v: 1; type: 'RETRY_DETECTION'; correlationId: string; payload: { tabId?: number } }
+  | { v: 1; type: 'REQUEST_FULL_ANALYSIS'; correlationId: string; payload: { tabId?: number } };
 
 export type RuntimeMessage =
   | ExtensionMessage
@@ -110,7 +114,8 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
       (settings.maxConcurrency ?? 7) <= 6 &&
       (settings.activationMode === 'always' || settings.activationMode === 'panel_open') &&
       Number.isInteger(settings.fullDocumentCharacterLimit) &&
-      (settings.fullDocumentCharacterLimit ?? 0) > 0;
+      (settings.fullDocumentCharacterLimit ?? 0) > 0 &&
+      (settings.targetLanguage === undefined || ['EN', 'ES', 'CN'].includes(settings.targetLanguage));
   }
   if (message.type === 'WRITING_MODEL_STATUS_REQUEST') return true;
   if (message.type === 'WRITING_MODEL_STATUS') {
@@ -174,7 +179,7 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
   if (message.type === 'OPEN_SIDE_PANEL') {
     return typeof (message.payload as { tabId?: unknown }).tabId === 'number';
   }
-  if (message.type === 'RETRY_DETECTION') return true;
+  if (message.type === 'RETRY_DETECTION' || message.type === 'REQUEST_FULL_ANALYSIS') return true;
   return message.type === 'PANEL_CONNECTION_CHANGED' &&
     typeof (message.payload as { open?: unknown }).open === 'boolean';
 }

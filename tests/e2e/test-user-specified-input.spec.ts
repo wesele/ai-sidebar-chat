@@ -50,6 +50,7 @@ test('test user specified input "This is same, I am g to the schol." and verify 
       maxConcurrency: 3,
       activationMode: 'always' as const,
       fullDocumentCharacterLimit: 20_000,
+      targetLanguage: 'EN' as const,
     };
 
     const sidepanelPage = await context.newPage();

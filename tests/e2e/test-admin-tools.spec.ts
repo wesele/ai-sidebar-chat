@@ -40,6 +40,7 @@ test('test writing assistant on http://192.168.31.233:8080/admin/tools Edit modu
       maxConcurrency: 3,
       activationMode: 'always' as const,
       fullDocumentCharacterLimit: 20_000,
+      targetLanguage: 'EN' as const,
     };
 
     const sidepanelPage = await context.newPage();

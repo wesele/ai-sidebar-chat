@@ -84,6 +84,7 @@ const WRITING_SETTINGS = {
   maxConcurrency: 3,
   activationMode: 'always' as const,
   fullDocumentCharacterLimit: 20_000,
+  targetLanguage: 'EN' as const,
 };
 
 // ---------------------------------------------------------------------------

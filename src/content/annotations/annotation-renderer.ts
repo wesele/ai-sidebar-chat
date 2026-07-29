@@ -106,9 +106,13 @@ export class AnnotationRenderer {
             : issue.scope === 'paragraph'
               ? `paragraph ${issue.severity}`
               : `under ${issue.severity}`;
-          node.style.left = `${issue.scope === 'paragraph' ? rect.left - 8 : rect.left}px`;
+          node.style.left = `${issue.scope === 'paragraph'
+            ? rect.left - 8
+            : issue.scope === 'local'
+              ? rect.left - 2
+              : rect.left}px`;
           node.style.top = `${issue.scope === 'local'
-            ? rect.top - 16
+            ? rect.top - 13
             : issue.scope === 'paragraph'
               ? rect.top
               : rect.bottom - 2}px`;

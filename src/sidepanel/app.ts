@@ -1,4 +1,4 @@
-import type { ApplyResultPayload, EditorViewState } from '../shared/messages';
+import type { ApplyResultPayload, EditorViewState, TargetLanguage } from '../shared/messages';
 
 export interface WritingSettings {
   providerId: string;
@@ -7,6 +7,7 @@ export interface WritingSettings {
   maxConcurrency: number;
   activationMode: 'always' | 'panel_open';
   fullDocumentCharacterLimit: number;
+  targetLanguage: TargetLanguage;
 }
 
 export const defaults: WritingSettings = {
@@ -16,6 +17,7 @@ export const defaults: WritingSettings = {
   maxConcurrency: 3,
   activationMode: 'always',
   fullDocumentCharacterLimit: 20_000,
+  targetLanguage: 'EN',
 };
 
 type PublicProvider = { id: string; name: string; models: string[] };
@@ -37,7 +39,7 @@ export class WritingAssistantPanel {
     private readonly root: HTMLElement,
     private readonly persist: (settings: WritingSettings) => Promise<void>,
     private readonly command: (
-      type: 'APPLY_ISSUE' | 'APPLY_ALL' | 'RETRY_DETECTION',
+      type: 'APPLY_ISSUE' | 'APPLY_ALL' | 'RETRY_DETECTION' | 'REQUEST_FULL_ANALYSIS',
       payload: { tabId: number; editorId: string; revision: number; issueId: string } | {
         tabId: number;
         editorId: string;
@@ -141,16 +143,17 @@ export class WritingAssistantPanel {
     statusDot.className = statusDotClass;
 
     if (state?.status === 'error') {
-      const errorTextSpan = document.createElement('span');
-      errorTextSpan.className = 'wa-status-text wa-status-text-clickable';
-      errorTextSpan.dataset.writingErrorText = 'true';
-      errorTextSpan.textContent = '检测失败，可在设置中重试';
-      errorTextSpan.title = '点击查看错误原因';
-      errorTextSpan.addEventListener('click', () => {
+      const errorTextBtn = document.createElement('button');
+      errorTextBtn.type = 'button';
+      errorTextBtn.className = 'wa-status-text wa-status-text-clickable';
+      errorTextBtn.dataset.writingErrorText = 'true';
+      errorTextBtn.textContent = '检测失败（点击查看原因）';
+      errorTextBtn.title = '点击查看具体错误信息';
+      errorTextBtn.addEventListener('click', () => {
         this.showErrorModal = true;
         this.render();
       });
-      status.append(statusDot, errorTextSpan);
+      status.append(statusDot, errorTextBtn);
 
       const retryBtn = this.button('重试', () => {
         if (this.tabId !== undefined) {
@@ -162,7 +165,7 @@ export class WritingAssistantPanel {
       status.append(retryBtn);
     } else {
       const statusText = document.createTextNode(!state
-        ? '聚焦一个英文编辑器以开始'
+        ? '聚焦一个编辑器以开始'
         : state.noModel
           ? '等待配置模型'
           : state.longText
@@ -174,13 +177,40 @@ export class WritingAssistantPanel {
     }
     const actions = document.createElement('div');
     actions.className = 'wa-actions';
-    const settingsButton = this.button('配置', () => {
+
+    const langSelect = document.createElement('select');
+    langSelect.className = 'wa-lang-select';
+    langSelect.dataset.writingLanguageSelect = 'true';
+    langSelect.title = '写作语言';
+    langSelect.setAttribute('aria-label', '写作语言');
+    for (const lang of ['EN', 'ES', 'CN'] as const) {
+      const option = document.createElement('option');
+      option.value = lang;
+      option.textContent = lang;
+      langSelect.append(option);
+    }
+    langSelect.value = this.settings.targetLanguage ?? 'EN';
+    langSelect.addEventListener('change', () => {
+      const nextSettings: WritingSettings = {
+        ...this.settings,
+        targetLanguage: langSelect.value as TargetLanguage,
+      };
+      this.settings = nextSettings;
+      void this.persist(nextSettings);
+    });
+
+    const settingsButton = document.createElement('button');
+    settingsButton.type = 'button';
+    settingsButton.className = 'wa-settings-button';
+    settingsButton.dataset.writingSettingsButton = 'true';
+    settingsButton.title = '配置';
+    settingsButton.setAttribute('aria-label', '配置');
+    settingsButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+    settingsButton.addEventListener('click', () => {
       this.settingsOpen = true;
       this.render();
     });
-    settingsButton.className = 'wa-settings-button';
-    settingsButton.dataset.writingSettingsButton = 'true';
-    actions.append(settingsButton);
+    actions.append(langSelect, settingsButton);
 
     const activeProviders = this.providers.length > 0
       ? this.providers
@@ -240,14 +270,21 @@ export class WritingAssistantPanel {
     }
 
     // 3. Move "全文" to behind each error count statistics
+    const hasFullResult = Boolean(state?.fullResult);
     const fullCount = state?.fullResult?.suggestions?.length ?? 0;
     const fullTextLabel = fullCount > 0 ? `全文 ${fullCount}` : '全文';
     const fullBtn = this.button(fullTextLabel, () => {
-      this.showFullText = !this.showFullText;
+      if (this.tabId !== undefined) {
+        this.command('REQUEST_FULL_ANALYSIS', { tabId: this.tabId });
+      }
+      this.showFullText = true;
       this.render();
     });
     fullBtn.dataset.scope = 'full';
     fullBtn.className = 'wa-count-btn';
+    if (!hasFullResult) {
+      fullBtn.classList.add('wa-count-btn-gray');
+    }
     if (this.showFullText) {
       fullBtn.classList.add('active');
       fullBtn.setAttribute('aria-pressed', 'true');
@@ -430,6 +467,15 @@ export class WritingAssistantPanel {
     limit.min = '1';
     limit.value = String(this.settings.fullDocumentCharacterLimit);
 
+    const targetLang = document.createElement('select');
+    targetLang.name = targetLang.dataset.field = 'targetLanguage';
+    targetLang.append(
+      new Option('EN (English)', 'EN'),
+      new Option('ES (Spanish)', 'ES'),
+      new Option('CN (Chinese)', 'CN'),
+    );
+    targetLang.value = this.settings.targetLanguage ?? 'EN';
+
     const save = document.createElement('button');
     save.type = 'submit';
     save.textContent = '保存写作设置';
@@ -442,6 +488,7 @@ export class WritingAssistantPanel {
         maxConcurrency: Math.max(1, Math.min(6, Number(concurrency.value) || 3)),
         activationMode: activation.value as WritingSettings['activationMode'],
         fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
+        targetLanguage: targetLang.value as TargetLanguage,
       };
       this.settings = next;
       void this.persist(next);
@@ -451,6 +498,7 @@ export class WritingAssistantPanel {
       heading,
       this.field('供应商', provider),
       this.field('模型', model),
+      this.field('写作语言', targetLang),
       this.field('调用策略', strategy),
       this.field('最大并发', concurrency),
       this.field('全文字符上限', limit),
@@ -480,6 +528,15 @@ export class WritingAssistantPanel {
     header.append(heading, close);
 
     const form = document.createElement('form');
+
+    const dialogTargetLang = document.createElement('select');
+    dialogTargetLang.name = dialogTargetLang.dataset.field = 'targetLanguage';
+    dialogTargetLang.append(
+      new Option('EN (English)', 'EN'),
+      new Option('ES (Spanish)', 'ES'),
+      new Option('CN (Chinese)', 'CN'),
+    );
+    dialogTargetLang.value = this.settings.targetLanguage ?? 'EN';
 
     const strategy = document.createElement('select');
     strategy.name = strategy.dataset.field = 'invocationStrategy';
@@ -512,12 +569,14 @@ export class WritingAssistantPanel {
         maxConcurrency: Math.max(1, Math.min(6, Number(concurrency.value) || 3)),
         activationMode: activation.value as WritingSettings['activationMode'],
         fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
+        targetLanguage: dialogTargetLang.value as TargetLanguage,
       };
       this.settingsOpen = false;
       void this.persist(this.settings);
       this.render();
     });
     form.append(
+      this.field('写作语言', dialogTargetLang),
       this.field('调用策略', strategy),
       this.field('最大并发', concurrency),
       this.field('全文字符上限', limit),

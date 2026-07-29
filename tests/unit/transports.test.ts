@@ -23,7 +23,38 @@ describe('analysis transport', () => {
     const body = JSON.parse(init?.body as string);
     expect(body.messages[0].content).toContain('scope');
     expect(body.messages[0].content).toContain('UTF-16');
+    expect(body.messages[0].content).toContain('written in Chinese');
     expect(init?.signal).toBe(controller.signal);
+  });
+
+  it('customizes prompt explanation language according to uiLanguage parameter', async () => {
+    const response = { schemaVersion: '1', requestId: 'r', documentRevision: 1, units: [] };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(response) } }],
+    }), { status: 200 }));
+    const transport = new OpenAITransport(provider, fetcher as typeof fetch);
+    await transport.analyze({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1, targetLanguage: 'en', units: [],
+    }, undefined, 'es');
+    const [, init] = (fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>)[0];
+    const body = JSON.parse(init?.body as string);
+    expect(body.messages[0].content).toContain('written in Spanish');
+
+    // Spanish target language test
+    await transport.analyze({
+      schemaVersion: '1', requestId: 'r2', documentRevision: 1, targetLanguage: 'ES', units: [],
+    });
+    const [, init2] = (fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>)[1];
+    const body2 = JSON.parse(init2?.body as string);
+    expect(body2.messages[0].content).toContain('as a Spanish writing tutor');
+
+    // Chinese target language test
+    await transport.analyze({
+      schemaVersion: '1', requestId: 'r3', documentRevision: 1, targetLanguage: 'CN', units: [],
+    });
+    const [, init3] = (fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>)[2];
+    const body3 = JSON.parse(init3?.body as string);
+    expect(body3.messages[0].content).toContain('as a Chinese writing tutor');
   });
 
   it('sends full-document prompts and surfaces OpenAI HTTP/JSON errors', async () => {

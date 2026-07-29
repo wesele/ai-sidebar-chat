@@ -13,12 +13,12 @@ export class GeminiTransport {
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
   ) {}
 
-  async analyze(request: AnalysisRequest, signal?: AbortSignal): Promise<AnalysisResponse> {
-    return this.post(unitAnalysisPrompt(request), signal);
+  async analyze(request: AnalysisRequest, signal?: AbortSignal, uiLanguage?: string): Promise<AnalysisResponse> {
+    return this.post(unitAnalysisPrompt(request, uiLanguage), signal);
   }
 
-  async full(request: FullDocumentRequest, signal?: AbortSignal): Promise<FullDocumentResponse> {
-    return this.post(fullAnalysisPrompt(request), signal);
+  async full(request: FullDocumentRequest, signal?: AbortSignal, uiLanguage?: string): Promise<FullDocumentResponse> {
+    return this.post(fullAnalysisPrompt(request, uiLanguage), signal);
   }
 
   private async post<T>(payload: unknown, signal?: AbortSignal): Promise<T> {

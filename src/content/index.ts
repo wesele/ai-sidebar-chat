@@ -17,12 +17,15 @@ let session: WritingSession | undefined;
 let renderer: AnnotationRenderer | undefined;
 let disposeGeometry: (() => void) | undefined;
 let lastEligible: HTMLElement | undefined;
+import type { TargetLanguage } from '../shared/messages';
+
 let settings = {
   activationMode: 'always' as 'always' | 'panel_open',
   fullDocumentCharacterLimit: 20_000,
   hasModel: false,
   invocationStrategy: 'batch' as 'batch' | 'parallel',
   maxConcurrency: 3,
+  targetLanguage: 'EN' as TargetLanguage,
 };
 
 const send = (message: RuntimeMessage): void => {
@@ -91,7 +94,7 @@ const start = (): void => {
       v: 1,
       type: 'FULL_ANALYSIS_REQUESTED',
       correlationId: requestId,
-      payload: { schemaVersion: '1', requestId, documentRevision: revision, text },
+      payload: { schemaVersion: '1', requestId, documentRevision: revision, text, targetLanguage: settings.targetLanguage ?? 'EN' },
     }),
     (requestId) => send({
       v: 1,
@@ -103,6 +106,7 @@ const start = (): void => {
     () => ({
       hasModel: settings.hasModel,
       fullDocumentCharacterLimit: settings.fullDocumentCharacterLimit,
+      targetLanguage: settings.targetLanguage ?? 'EN',
     }),
   );
   session.start();
@@ -142,6 +146,7 @@ void runtime.storage
     fullDocumentCharacterLimit?: number;
     invocationStrategy?: 'batch' | 'parallel';
     maxConcurrency?: number;
+    targetLanguage?: TargetLanguage;
   }>('writingAssistantSettings')
   .then((saved) => {
     settings = {
@@ -150,6 +155,7 @@ void runtime.storage
       fullDocumentCharacterLimit: saved?.fullDocumentCharacterLimit ?? 20_000,
       invocationStrategy: saved?.invocationStrategy ?? 'batch',
       maxConcurrency: saved?.maxConcurrency ?? 3,
+      targetLanguage: saved?.targetLanguage ?? 'EN',
     };
     initialized = true;
     activation.update(settings.activationMode);
@@ -189,6 +195,8 @@ runtime.messaging.onMessage((message) => {
       ?.setAttribute('data-analysis-error', message.payload.code);
   } else if (message.type === 'RETRY_DETECTION') {
     session?.retry();
+  } else if (message.type === 'REQUEST_FULL_ANALYSIS') {
+    session?.requestFullDoc();
   } else if (message.type === 'APPLY_ALL') {
     const result = applyAllForSession(session, message.payload);
     send({

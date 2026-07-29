@@ -6,9 +6,12 @@ import type { AnalysisRequest, AnalysisResponse, FullDocumentResponse } from '..
 import { generateUUID } from '../shared/uuid';
 import type { EditorAdapter } from './adapters/editor-adapter';
 
+import type { TargetLanguage } from '../shared/messages';
+
 export interface WritingSettings {
   hasModel: boolean;
   fullDocumentCharacterLimit: number;
+  targetLanguage: TargetLanguage;
 }
 
 type PendingRequest =
@@ -188,28 +191,30 @@ export class WritingSession {
     return { paragraphId: paragraph?.id, sentenceId: sentence?.id };
   }
 
-  leaveParagraph(completedParagraphId = this.lastParagraphId): void {
+  requestFullDoc(): void {
     const snapshot = this.adapter.readSnapshot();
-    const hasPendingFull = Array.from(this.pending.values()).some(
-      (p) => p.kind === 'full' && p.revision === this.cache?.revision,
-    );
-    const isFullAnalyzed =
-      this.cache?.analysisRevision === this.cache?.revision && this.cache?.fullResult !== undefined;
-
     if (
       this.cache &&
-      this.cache.status === 'dirty' &&
-      !isFullAnalyzed &&
-      !hasPendingFull &&
       this.settings().hasModel &&
       Boolean(snapshot.text.trim()) &&
       snapshot.text.length <= this.settings().fullDocumentCharacterLimit
     ) {
+      for (const [requestId, pending] of this.pending) {
+        if (pending.kind === 'full') {
+          this.cancel(requestId);
+          this.pending.delete(requestId);
+        }
+      }
       const requestId = generateUUID();
       this.pending.set(requestId, { kind: 'full', revision: this.cache.revision });
       this.publish(this.cache);
       this.requestFull(requestId, this.cache.revision, snapshot.text);
-    } else if (this.cache && snapshot.text.length > this.settings().fullDocumentCharacterLimit) {
+    }
+  }
+
+  leaveParagraph(completedParagraphId = this.lastParagraphId): void {
+    const snapshot = this.adapter.readSnapshot();
+    if (this.cache && snapshot.text.length > this.settings().fullDocumentCharacterLimit) {
       this.cache.status = 'error';
       this.publish(this.cache);
     }
@@ -277,7 +282,7 @@ export class WritingSession {
       schemaVersion: '1',
       requestId,
       documentRevision: this.cache.revision,
-      targetLanguage: 'en',
+      targetLanguage: this.settings().targetLanguage ?? 'EN',
       units,
     });
   }

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const artifactDir = 'C:/Users/wh101/.gemini/antigravity-cli/brain/4d1f84af-90fb-4a6c-bfd3-b3a1ebd13e5f';
+const artifactDir = 'C:/Users/wh101/.gemini/antigravity-cli/brain/eed1c0c8-4183-475b-98ae-7f6a4791b830';
 
 async function main() {
   const browser = await chromium.launch({
@@ -60,19 +60,29 @@ async function main() {
     const root = document.getElementById('writing-assistant-panel');
     if (!root) return;
     root.innerHTML = `
-      <h2 class="wa-title">写作助手</h2>
-      <p class="wa-status" role="status"><span class="wa-status-dot dot-green"></span>全部检测完毕</p>
       <div class="wa-model-bar">
         <label>模型</label>
         <select class="wa-model-select">
           <option value="gpt-4o">gpt-4o (OpenAI)</option>
           <option value="claude-3-5-sonnet">claude-3-5-sonnet (Anthropic)</option>
         </select>
+        <div class="wa-actions">
+          <select class="wa-lang-select" data-writing-language-select="true" title="写作语言" aria-label="写作语言">
+            <option value="EN" selected>EN</option>
+            <option value="ES">ES</option>
+            <option value="CN">CN</option>
+          </select>
+          <button type="button" class="wa-settings-button" data-writing-settings-button="true" title="配置" aria-label="配置">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          </button>
+        </div>
       </div>
+      <p class="wa-status" role="status"><span class="wa-status-dot dot-green"></span>全部检测完毕</p>
       <div class="wa-counts" aria-label="问题计数">
         <button type="button" class="wa-count-btn" data-scope="local">局部 3</button>
         <button type="button" class="wa-count-btn" data-scope="sentence">句子 2</button>
         <button type="button" class="wa-count-btn" data-scope="paragraph">段落 1</button>
+        <button type="button" class="wa-count-btn" data-scope="full">全文 6</button>
       </div>
       <section class="wa-section">
         <h3>当前句子</h3>
@@ -86,21 +96,6 @@ async function main() {
         <p class="wa-reason-text">句子衔接建议：合并简短句子以提高流畅度。</p>
         <button type="button" class="wa-btn-primary">应用修改</button>
       </section>
-      <details class="wa-full-card" data-severity="problem">
-        <summary>全文</summary>
-        <p>检测到 6 处语法和拼写建议，整体语调偏口语化。</p>
-        <ul>
-          <li data-severity="problem">拼写：检查多处 i/e 倒置错误。</li>
-          <li data-severity="improvement">文风：建议提升学术/专业语调。</li>
-        </ul>
-      </details>
-      <form class="wa-settings-form">
-        <h3>设置</h3>
-        <label><span>供应商</span><select name="providerId" data-field="providerId"><option value="openai">OpenAI API</option></select></label>
-        <label><span>模型</span><select name="modelId" data-field="modelId"><option value="gpt-4o">gpt-4o</option></select></label>
-        <label><span>调用策略</span><select name="invocationStrategy" data-field="invocationStrategy"><option value="batch">批量合并</option></select></label>
-        <button type="submit">保存写作设置</button>
-      </form>
     `;
   });
 

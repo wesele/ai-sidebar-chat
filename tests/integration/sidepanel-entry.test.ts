@@ -108,7 +108,7 @@ describe('side-panel tab and batch correlation binding', () => {
     if (!secondCommand || secondCommand.type !== 'APPLY_ALL') throw new Error('Missing second APPLY_ALL command');
     activeTabId = 22;
     activated?.(22);
-    expect(document.body.textContent).toContain('聚焦一个英文编辑器以开始');
+    expect(document.body.textContent).toContain('聚焦一个编辑器以开始');
     expect(document.querySelector('[data-apply-result]')).toBeNull();
     dispatch({
       v: 1,

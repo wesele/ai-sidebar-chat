@@ -36,6 +36,7 @@ describe('WritingSession projected detection status', () => {
 
     session.start();
     session.leaveParagraph();
+    session.requestFullDoc();
     expect(unitRequests).toHaveLength(1);
     expect(fullRequests).toHaveLength(1);
     expect(session.viewState()?.status).toBe('queued');

@@ -41,6 +41,8 @@ describe('AnnotationRenderer local issue', () => {
     expect(mark.title).toBe('Use the correct spelling.');
     expect(mark.getAttribute('aria-label')).toContain('Use the correct spelling.');
     expect(mark.style.height).toBe('auto');
+    expect(mark.style.left).toBe('23px');
+    expect(mark.style.top).toBe('22px');
     mark.click();
     expect(apply).toHaveBeenCalledWith('issue-1');
 

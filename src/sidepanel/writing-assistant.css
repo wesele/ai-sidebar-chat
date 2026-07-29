@@ -59,7 +59,27 @@
 
 .wa-actions {
   display: flex;
+  align-items: center;
+  gap: 6px;
   justify-content: flex-end;
+}
+
+.wa-lang-select {
+  background: var(--secondary-bg-color, #1a1a1a);
+  border: 1px solid var(--border-color, #444444);
+  border-radius: 6px;
+  color: var(--text-color, #ffffff);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 6px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.wa-lang-select:hover,
+.wa-lang-select:focus {
+  border-color: var(--primary-color, #2563eb);
 }
 
 .wa-settings-button,
@@ -69,7 +89,17 @@
   background: var(--secondary-bg-color, #1e1e1e);
   color: var(--text-color, #fff);
   cursor: pointer;
-  padding: 6px 10px;
+  padding: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.wa-settings-button:hover,
+.wa-settings-close:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.1));
+  border-color: var(--primary-color, #2563eb);
 }
 
 section[data-writing-settings] {
@@ -174,6 +204,11 @@ section[data-writing-settings] {
 .wa-status-dot.dot-orange { background-color: #f97316; }
 
 .wa-status-text-clickable {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
   cursor: pointer;
   text-decoration: underline;
   text-decoration-style: dotted;
@@ -348,6 +383,16 @@ section[data-writing-settings] {
   border-color: var(--primary-color, #2563eb);
   background: var(--hover-bg, rgba(37, 99, 235, 0.25));
   color: #ffffff;
+}
+
+.wa-count-btn.wa-count-btn-gray {
+  color: var(--secondary-text-color, #888888);
+  border-color: var(--border-color, #383838);
+  background: var(--panel-bg, #202020);
+}
+
+.wa-count-btn.wa-count-btn-gray[data-scope="full"]::before {
+  background-color: #6b7280;
 }
 
 .wa-count-btn[data-scope="local"]::before {

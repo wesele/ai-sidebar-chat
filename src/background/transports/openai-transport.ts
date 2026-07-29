@@ -20,21 +20,21 @@ export class OpenAITransport {
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
   ) {}
 
-  async analyze(request: AnalysisRequest, signal?: AbortSignal): Promise<AnalysisResponse> {
+  async analyze(request: AnalysisRequest, signal?: AbortSignal, uiLanguage?: string): Promise<AnalysisResponse> {
     return this.post('/chat/completions', {
       model: this.provider.modelId,
       response_format: { type: 'json_object' },
       stream: false,
-      messages: [{ role: 'user', content: unitAnalysisPrompt(request) }],
+      messages: [{ role: 'user', content: unitAnalysisPrompt(request, uiLanguage) }],
     }, signal);
   }
 
-  async full(request: FullDocumentRequest, signal?: AbortSignal): Promise<FullDocumentResponse> {
+  async full(request: FullDocumentRequest, signal?: AbortSignal, uiLanguage?: string): Promise<FullDocumentResponse> {
     return this.post('/chat/completions', {
       model: this.provider.modelId,
       response_format: { type: 'json_object' },
       stream: false,
-      messages: [{ role: 'user', content: fullAnalysisPrompt(request) }],
+      messages: [{ role: 'user', content: fullAnalysisPrompt(request, uiLanguage) }],
     }, signal);
   }
 

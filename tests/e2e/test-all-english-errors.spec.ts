@@ -40,6 +40,7 @@ test('simulate and test various English input error categories according to Spec
       maxConcurrency: 3,
       activationMode: 'always' as const,
       fullDocumentCharacterLimit: 20_000,
+      targetLanguage: 'EN' as const,
     };
 
     const sidepanelPage = await context.newPage();
