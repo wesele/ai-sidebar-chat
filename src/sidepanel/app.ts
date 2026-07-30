@@ -8,6 +8,8 @@ export interface WritingSettings {
   activationMode: 'always' | 'panel_open';
   fullDocumentCharacterLimit: number;
   targetLanguage: TargetLanguage;
+  /** Mirrors AI Tools thinking toggle: when true, disables model thinking/reasoning */
+  disableThinking?: boolean;
 }
 
 export const defaults: WritingSettings = {
@@ -18,6 +20,7 @@ export const defaults: WritingSettings = {
   activationMode: 'always',
   fullDocumentCharacterLimit: 20_000,
   targetLanguage: 'EN',
+  disableThinking: false,
 };
 
 type PublicProvider = { id: string; name: string; models: string[] };
@@ -34,6 +37,7 @@ export class WritingAssistantPanel {
   private applyResult?: ApplyResultPayload;
   private showFullText = false;
   private showErrorModal = false;
+  private errorModalBackdrop?: HTMLElement;
 
   constructor(
     private readonly root: HTMLElement,
@@ -119,6 +123,9 @@ export class WritingAssistantPanel {
   }
 
   private render(): void {
+    // Remove any existing modal backdrop that lives on document.body
+    this.errorModalBackdrop?.remove();
+    this.errorModalBackdrop = undefined;
     this.root.replaceChildren();
     const state = this.state;
     const title = document.createElement('h2');
@@ -164,15 +171,23 @@ export class WritingAssistantPanel {
       retryBtn.dataset.writingRetryButton = 'true';
       status.append(retryBtn);
     } else {
-      const statusText = document.createTextNode(!state
-        ? '聚焦一个编辑器以开始'
-        : state.noModel
-          ? '等待配置模型'
-          : state.longText
-            ? '文本过长，全文检测暂停'
-            : state.status === 'queued' || state.status === 'analyzing'
-              ? '正在检测…'
-              : '全部检测完毕');
+      let statusLabel: string;
+      if (!state) {
+        statusLabel = '聚焦一个编辑器以开始';
+      } else if (state.noModel) {
+        statusLabel = '等待配置模型';
+      } else if (state.longText) {
+        statusLabel = '文本过长，全文检测暂停';
+      } else if (state.status === 'queued' || state.status === 'analyzing') {
+        if (state.analysisTotal !== undefined && state.analysisDone !== undefined && state.analysisTotal > 1) {
+          statusLabel = `正在检测… ${state.analysisDone}/${state.analysisTotal}`;
+        } else {
+          statusLabel = '正在检测…';
+        }
+      } else {
+        statusLabel = '全部检测完毕';
+      }
+      const statusText = document.createTextNode(statusLabel);
       status.append(statusDot, statusText);
     }
     const actions = document.createElement('div');
@@ -476,6 +491,11 @@ export class WritingAssistantPanel {
     );
     targetLang.value = this.settings.targetLanguage ?? 'EN';
 
+    const disableThinkingCheck = document.createElement('input');
+    disableThinkingCheck.type = 'checkbox';
+    disableThinkingCheck.name = disableThinkingCheck.dataset.field = 'disableThinking';
+    disableThinkingCheck.checked = this.settings.disableThinking ?? false;
+
     const save = document.createElement('button');
     save.type = 'submit';
     save.textContent = '保存写作设置';
@@ -489,6 +509,7 @@ export class WritingAssistantPanel {
         activationMode: activation.value as WritingSettings['activationMode'],
         fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
         targetLanguage: targetLang.value as TargetLanguage,
+        disableThinking: disableThinkingCheck.checked,
       };
       this.settings = next;
       void this.persist(next);
@@ -503,6 +524,7 @@ export class WritingAssistantPanel {
       this.field('最大并发', concurrency),
       this.field('全文字符上限', limit),
       this.field('激活模式', activation),
+      this.field('关闭思考模式', disableThinkingCheck),
       save,
     );
     this.root.append(form);
@@ -557,6 +579,10 @@ export class WritingAssistantPanel {
     limit.name = limit.dataset.field = 'fullDocumentCharacterLimit';
     limit.min = '1';
     limit.value = String(this.settings.fullDocumentCharacterLimit);
+    const dialogDisableThinking = document.createElement('input');
+    dialogDisableThinking.type = 'checkbox';
+    dialogDisableThinking.name = dialogDisableThinking.dataset.field = 'disableThinking';
+    dialogDisableThinking.checked = this.settings.disableThinking ?? false;
     const save = document.createElement('button');
     save.type = 'submit';
     save.textContent = '保存配置';
@@ -570,6 +596,7 @@ export class WritingAssistantPanel {
         activationMode: activation.value as WritingSettings['activationMode'],
         fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
         targetLanguage: dialogTargetLang.value as TargetLanguage,
+        disableThinking: dialogDisableThinking.checked,
       };
       this.settingsOpen = false;
       void this.persist(this.settings);
@@ -581,6 +608,7 @@ export class WritingAssistantPanel {
       this.field('最大并发', concurrency),
       this.field('全文字符上限', limit),
       this.field('激活模式', activation),
+      this.field('关闭思考模式', dialogDisableThinking),
       save,
     );
     dialog.append(header, form);
@@ -645,7 +673,9 @@ export class WritingAssistantPanel {
 
     modal.append(header, body, footer);
     backdrop.append(modal);
-    this.root.append(backdrop);
+    // Append to document.body so position:fixed works even with overflow-y:auto on the panel
+    document.body.append(backdrop);
+    this.errorModalBackdrop = backdrop;
   }
 
   private formatErrorReason(code?: string): string {

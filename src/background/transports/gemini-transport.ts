@@ -11,6 +11,7 @@ export class GeminiTransport {
   constructor(
     private readonly provider: ProviderConfig,
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+    private readonly disableThinking = false,
   ) {}
 
   async analyze(request: AnalysisRequest, signal?: AbortSignal, uiLanguage?: string): Promise<AnalysisResponse> {
@@ -28,7 +29,10 @@ export class GeminiTransport {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: String(payload) }] }],
-        generationConfig: { responseMimeType: 'application/json' },
+        generationConfig: {
+          responseMimeType: 'application/json',
+          ...(this.disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        },
       }),
       signal,
     });

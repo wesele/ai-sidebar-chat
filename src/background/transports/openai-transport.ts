@@ -18,6 +18,7 @@ export class OpenAITransport {
   constructor(
     private readonly provider: ProviderConfig,
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+    private readonly disableThinking = false,
   ) {}
 
   async analyze(request: AnalysisRequest, signal?: AbortSignal, uiLanguage?: string): Promise<AnalysisResponse> {
@@ -26,6 +27,7 @@ export class OpenAITransport {
       response_format: { type: 'json_object' },
       stream: false,
       messages: [{ role: 'user', content: unitAnalysisPrompt(request, uiLanguage) }],
+      ...(this.disableThinking ? { thinking: { type: 'disabled' } } : {}),
     }, signal);
   }
 
@@ -35,6 +37,7 @@ export class OpenAITransport {
       response_format: { type: 'json_object' },
       stream: false,
       messages: [{ role: 'user', content: fullAnalysisPrompt(request, uiLanguage) }],
+      ...(this.disableThinking ? { thinking: { type: 'disabled' } } : {}),
     }, signal);
   }
 

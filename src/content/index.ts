@@ -107,6 +107,8 @@ const start = (): void => {
       hasModel: settings.hasModel,
       fullDocumentCharacterLimit: settings.fullDocumentCharacterLimit,
       targetLanguage: settings.targetLanguage ?? 'EN',
+      invocationStrategy: settings.invocationStrategy,
+      maxConcurrency: settings.maxConcurrency,
     }),
   );
   session.start();

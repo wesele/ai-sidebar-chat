@@ -11,7 +11,7 @@ import { publicProviders } from './provider-registry';
 const runtime = chromeRuntime();
 void runtime.sidePanel.setActionBehavior?.().catch(() => undefined);
 const requests = new RequestRegistry();
-let settings: SettingsPayload = { providerId: '', modelId: '', invocationStrategy: 'batch', maxConcurrency: 3, activationMode: 'always', fullDocumentCharacterLimit: 20000, targetLanguage: 'EN' };
+let settings: SettingsPayload = { providerId: '', modelId: '', invocationStrategy: 'batch', maxConcurrency: 3, activationMode: 'always', fullDocumentCharacterLimit: 20000, targetLanguage: 'EN', disableThinking: false };
 let settingsUpdatedInThisLifetime = false;
 const settingsReady = runtime.storage.get<SettingsPayload>('writingAssistantSettings').then((saved) => {
   if (
@@ -64,7 +64,7 @@ runtime.messaging.onMessage((message, sender) => {
   if (message.type === 'FULL_ANALYSIS_REQUESTED') void full(message, tabId);
 });
 
-async function provider(): Promise<OpenAITransport | GeminiTransport | undefined> { await settingsReady; const state = await runtime.storage.get<unknown>('sidebarState'); const selected = resolveWritingProvider(state, settings); return !selected ? undefined : selected.kind === 'gemini' ? new GeminiTransport(selected) : new OpenAITransport(selected); }
+async function provider(): Promise<OpenAITransport | GeminiTransport | undefined> { await settingsReady; const state = await runtime.storage.get<unknown>('sidebarState'); const selected = resolveWritingProvider(state, settings); return !selected ? undefined : selected.kind === 'gemini' ? new GeminiTransport(selected, undefined, settings.disableThinking) : new OpenAITransport(selected, undefined, settings.disableThinking); }
 const failureCode = (error: unknown): string => {
   const status = (error as { status?: number }).status;
   if (status) return `HTTP_${status}`;

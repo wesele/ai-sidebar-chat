@@ -18,6 +18,10 @@ export interface EditorViewState {
   revision: number;
   status: string;
   counts: Record<string, number>;
+  /** Number of API calls that have completed so far in the current analysis batch */
+  analysisDone?: number;
+  /** Total number of API calls scheduled in the current analysis batch */
+  analysisTotal?: number;
   currentSentence?: {
     issueId: string;
     original: string;
@@ -55,6 +59,8 @@ export type SettingsPayload = {
   activationMode: 'always' | 'panel_open';
   fullDocumentCharacterLimit: number;
   targetLanguage: TargetLanguage;
+  /** When true, sends thinking:disabled to OpenAI-compatible endpoints (mirrors AI Tools thinking toggle) */
+  disableThinking?: boolean;
 };
 
 export type ApplyResultPayload = {
@@ -115,7 +121,8 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
       (settings.activationMode === 'always' || settings.activationMode === 'panel_open') &&
       Number.isInteger(settings.fullDocumentCharacterLimit) &&
       (settings.fullDocumentCharacterLimit ?? 0) > 0 &&
-      (settings.targetLanguage === undefined || ['EN', 'ES', 'CN'].includes(settings.targetLanguage));
+      (settings.targetLanguage === undefined || ['EN', 'ES', 'CN'].includes(settings.targetLanguage)) &&
+      (settings.disableThinking === undefined || typeof settings.disableThinking === 'boolean');
   }
   if (message.type === 'WRITING_MODEL_STATUS_REQUEST') return true;
   if (message.type === 'WRITING_MODEL_STATUS') {

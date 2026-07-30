@@ -35,7 +35,12 @@ ${JSON.stringify(request)}`;
 export function fullAnalysisPrompt(request: FullDocumentRequest, uiLanguage?: string): string {
   const langName = getLanguageName(uiLanguage);
   const targetLangName = getTargetLanguageName(request.targetLanguage);
-  return `Review this ${targetLangName} document only for tone consistency, overall coherence, obvious repetition, contradiction, and clarity of purpose. Do not return rewritten document text.
+  return `Review this ${targetLangName} document at the macro level only. Focus exclusively on:
+1. Writing intent — is the overall purpose of the document clear and consistent?
+2. Overall fluency — does the text read naturally as a whole (not sentence-by-sentence grammar)?
+3. Logical coherence — do the ideas flow logically? Are there structural contradictions or missing transitions between major sections?
+
+Do NOT flag: grammar errors, spelling, word choice, punctuation, repetition of phrases, or any issue that can be caught at the sentence level. Do not return rewritten document text.
 Return JSON only: {"schemaVersion":"1","requestId":"...","documentRevision":1,"severity":"none|improvement|problem","summary":"...","suggestions":[{"severity":"improvement|problem","title":"...","reason":"..."}]} using the same requestId and documentRevision. All fields must be concise plain text. Write all summaries, suggestion titles, and reasons in ${langName}.
 REQUEST:
 ${JSON.stringify(request)}`;

@@ -12,10 +12,12 @@ export interface WritingSettings {
   hasModel: boolean;
   fullDocumentCharacterLimit: number;
   targetLanguage: TargetLanguage;
+  invocationStrategy?: 'batch' | 'parallel';
+  maxConcurrency?: number;
 }
 
 type PendingRequest =
-  | { kind: 'units'; revision: number; remaining: Set<string> }
+  | { kind: 'units'; revision: number; remaining: Set<string>; totalApiCalls: number; apiCallsDone: number }
   | { kind: 'full'; revision: number };
 
 const projectPreview = (issue: Issue) => ({
@@ -272,10 +274,18 @@ export class WritingSession {
 
     if (!units.length) return;
     const requestId = generateUUID();
+    const strategy = this.settings().invocationStrategy ?? 'batch';
+    const maxConcurrency = this.settings().maxConcurrency ?? 3;
+    // Estimate total API calls: batch=ceil(units/16), parallel=units.length capped by concurrency slots
+    const totalApiCalls = strategy === 'parallel'
+      ? Math.min(units.length, Math.max(1, Math.min(6, maxConcurrency)))
+      : Math.ceil(units.length / 16);
     this.pending.set(requestId, {
       kind: 'units',
       revision: this.cache.revision,
       remaining: new Set(units.map((unit) => unit.unitId)),
+      totalApiCalls: Math.max(1, totalApiCalls),
+      apiCallsDone: 0,
     });
     this.publish(this.cache);
     this.request({
@@ -383,6 +393,7 @@ export class WritingSession {
 
     for (const unit of response.units) pending.remaining.delete(unit.unitId);
     if (pending.remaining.size === 0) this.pending.delete(response.requestId);
+    else pending.apiCallsDone += 1;
     this.publish(this.cache);
   }
 
@@ -468,6 +479,7 @@ export class WritingSession {
       revision: this.cache.revision,
       status: this.projectedStatus(),
       counts: countIssues(this.cache),
+      ...this.progressState(),
       batchPreviews: {
         local: issues.filter((issue) => issue.scope === 'local').map(projectPreview),
         sentence: issues.filter((issue) => issue.scope === 'sentence').map(projectPreview),
@@ -484,6 +496,16 @@ export class WritingSession {
       noModel: !this.settings().hasModel,
       errorReason: this.cache.errorReason,
     };
+  }
+
+  private progressState(): { analysisDone?: number; analysisTotal?: number } {
+    // Find the active units pending request (there is at most one at a time)
+    for (const pending of this.pending.values()) {
+      if (pending.kind === 'units' && pending.totalApiCalls > 1) {
+        return { analysisDone: pending.apiCallsDone, analysisTotal: pending.totalApiCalls };
+      }
+    }
+    return {};
   }
 
   private projectedStatus(): DetectionStatus {
