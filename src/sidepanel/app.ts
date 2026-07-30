@@ -10,6 +10,8 @@ export interface WritingSettings {
   targetLanguage: TargetLanguage;
   /** Mirrors AI Tools thinking toggle: when true, disables model thinking/reasoning */
   disableThinking?: boolean;
+  /** When true, uses structured outputs / constrained decoding (json_schema for OpenAI, responseSchema for Gemini) */
+  constrainedDecoding?: boolean;
 }
 
 export const defaults: WritingSettings = {
@@ -21,6 +23,7 @@ export const defaults: WritingSettings = {
   fullDocumentCharacterLimit: 20_000,
   targetLanguage: 'EN',
   disableThinking: false,
+  constrainedDecoding: false,
 };
 
 type PublicProvider = { id: string; name: string; models: string[] };
@@ -583,6 +586,10 @@ export class WritingAssistantPanel {
     dialogDisableThinking.type = 'checkbox';
     dialogDisableThinking.name = dialogDisableThinking.dataset.field = 'disableThinking';
     dialogDisableThinking.checked = this.settings.disableThinking ?? false;
+    const dialogConstrainedDecoding = document.createElement('input');
+    dialogConstrainedDecoding.type = 'checkbox';
+    dialogConstrainedDecoding.name = dialogConstrainedDecoding.dataset.field = 'constrainedDecoding';
+    dialogConstrainedDecoding.checked = this.settings.constrainedDecoding ?? false;
     const save = document.createElement('button');
     save.type = 'submit';
     save.textContent = '保存配置';
@@ -597,6 +604,7 @@ export class WritingAssistantPanel {
         fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
         targetLanguage: dialogTargetLang.value as TargetLanguage,
         disableThinking: dialogDisableThinking.checked,
+        constrainedDecoding: dialogConstrainedDecoding.checked,
       };
       this.settingsOpen = false;
       void this.persist(this.settings);
@@ -609,6 +617,7 @@ export class WritingAssistantPanel {
       this.field('全文字符上限', limit),
       this.field('激活模式', activation),
       this.field('关闭思考模式', dialogDisableThinking),
+      this.field('启用约束性解码', dialogConstrainedDecoding),
       save,
     );
     dialog.append(header, form);
@@ -697,11 +706,17 @@ export class WritingAssistantPanel {
     if (code.startsWith('HTTP_')) {
       return `模型服务返回错误状态码 (${code})，请检查 API 配置或服务可用性。`;
     }
-    if (code === 'INVALID_RESPONSE') {
-      return '模型返回的响应格式无法解析，请更换模型或重试。';
-    }
     if (code === 'NETWORK') {
-      return '网络连接失败，无法连接到模型 API 端点。';
+      return '网络连接失败，无法连接到模型 API 端点，请检查网络或代理设置。';
+    }
+    if (code === 'RESPONSE_DECODE') {
+      return '无法将 API 响应体解析为 JSON，服务端可能返回了非 JSON 内容（如 HTML 错误页）。';
+    }
+    if (code === 'EMPTY_RESPONSE') {
+      return '模型返回了空响应内容，可能因上下文过长被截断或模型异常，请重试。';
+    }
+    if (code === 'PARSE_ERROR' || code === 'INVALID_RESPONSE') {
+      return '模型输出的 JSON 格式无效，无法解析。如已启用约束性解码，请确认模型支持该功能；否则可尝试更换模型或重试。';
     }
     return `检测失败原因: ${code}`;
   }

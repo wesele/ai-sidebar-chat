@@ -61,6 +61,8 @@ export type SettingsPayload = {
   targetLanguage: TargetLanguage;
   /** When true, sends thinking:disabled to OpenAI-compatible endpoints (mirrors AI Tools thinking toggle) */
   disableThinking?: boolean;
+  /** When true, uses structured outputs / constrained decoding (json_schema for OpenAI, responseSchema for Gemini) */
+  constrainedDecoding?: boolean;
 };
 
 export type ApplyResultPayload = {
@@ -122,7 +124,8 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
       Number.isInteger(settings.fullDocumentCharacterLimit) &&
       (settings.fullDocumentCharacterLimit ?? 0) > 0 &&
       (settings.targetLanguage === undefined || ['EN', 'ES', 'CN'].includes(settings.targetLanguage)) &&
-      (settings.disableThinking === undefined || typeof settings.disableThinking === 'boolean');
+      (settings.disableThinking === undefined || typeof settings.disableThinking === 'boolean') &&
+      (settings.constrainedDecoding === undefined || typeof settings.constrainedDecoding === 'boolean');
   }
   if (message.type === 'WRITING_MODEL_STATUS_REQUEST') return true;
   if (message.type === 'WRITING_MODEL_STATUS') {
