@@ -5,6 +5,9 @@ import { ActivationController } from './activation-controller';
 import { applyAllForSession } from './apply-command';
 import { ContentEditableAdapter } from './adapters/contenteditable-adapter';
 import type { EditorAdapter } from './adapters/editor-adapter';
+import { resolveAdapter } from './adapters/adapter-registry';
+// Site-specific adapters — each self-registers on import (side-effect only)
+import './adapters/prosemirror-adapter';
 import { TextControlAdapter } from './adapters/text-control-adapter';
 import { AnnotationRenderer, dotState } from './annotations/annotation-renderer';
 import { installEditorDiscovery } from './editor-discovery';
@@ -41,10 +44,16 @@ const stop = (): void => {
   renderer = undefined;
 };
 
-const makeAdapter = (element: HTMLElement): EditorAdapter =>
-  element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
-    ? new TextControlAdapter(element, `editor-${generateUUID()}`)
-    : new ContentEditableAdapter(element, `editor-${generateUUID()}`);
+const makeAdapter = (element: HTMLElement): EditorAdapter => {
+  const editorId = `editor-${generateUUID()}`;
+  // Site-specific adapters take priority (Confluence, Gmail, etc.)
+  const siteAdapter = resolveAdapter(element, editorId);
+  if (siteAdapter) return siteAdapter;
+  // Generic fallback: textarea/input → TextControlAdapter, rest → ContentEditableAdapter
+  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+    ? new TextControlAdapter(element, editorId)
+    : new ContentEditableAdapter(element, editorId);
+};
 
 const start = (): void => {
   if (!initialized || !lastEligible || session || !activation.active() || !lastEligible.isConnected) return;

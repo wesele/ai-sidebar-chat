@@ -18,4 +18,21 @@ export default async function globalSetup(): Promise<void> {
       },
     },
   });
+
+  await build({
+    configFile: false,
+    logLevel: 'silent',
+    build: {
+      emptyOutDir: false,
+      lib: {
+        entry: path.resolve('tests/e2e/prosemirror-adapter-entry.ts'),
+        formats: ['iife'],
+        name: 'ProseMirrorAdapterHarness',
+      },
+      outDir: 'test-results/adapter-harness',
+      rollupOptions: {
+        output: { entryFileNames: 'prosemirror-adapter.js' },
+      },
+    },
+  });
 }

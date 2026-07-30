@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Confluence Editor Mock Fixture</title>
+  <style>
+    /* Minimal layout so elements have non-zero dimensions (required for visibility check) */
+    body { margin: 16px; font: 16px/1.5 sans-serif; }
+    .ak-editor-fp-content-area { padding: 16px; border: 1px solid #ccc; min-height: 120px; }
+    .ProseMirror { outline: none; min-height: 80px; }
+    .ProseMirror:focus { border-color: #0052cc; }
+    #plain-ce { border: 1px solid #aaa; min-height: 60px; padding: 8px; }
+  </style>
+</head>
+<body>
+
+  <!--
+    Mock of Confluence Cloud's Atlassian Editor structure.
+    Atlassian Editor wraps ProseMirror in a container with a specific testid.
+    The actual editable root is div.ProseMirror[contenteditable="true"].
+  -->
+  <div data-testid="ak-editor-fp-content-area" id="confluence-editor-container">
+    <div class="ProseMirror" id="confluence-editor" contenteditable="true" role="textbox" aria-multiline="true">
+      <p>I recieved your message and will reveiw it carefuly.</p>
+      <p>Please bare with me while I look at the detials.</p>
+    </div>
+  </div>
+
+  <!--
+    A plain contenteditable that should NOT be matched by the Confluence adapter.
+    Used to verify the adapter doesn't over-match.
+  -->
+  <div id="plain-ce" contenteditable="true">
+    <p>This is a plain contenteditable editor without ProseMirror markers.</p>
+  </div>
+
+</body>
+</html>
