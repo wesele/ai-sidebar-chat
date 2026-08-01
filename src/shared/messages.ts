@@ -34,6 +34,12 @@ export interface EditorViewState {
     replacement: string;
     reason: string;
   };
+  currentParagraphIssues?: Array<{
+    issueId: string;
+    original: string;
+    replacement: string;
+    reason: string;
+  }>;
   batchPreviews?: Record<'local' | 'sentence' | 'paragraph', BatchPreviewItem[]>;
   fullResult?: {
     severity: string;
@@ -44,6 +50,8 @@ export interface EditorViewState {
       reason: string;
     }>;
   };
+  /** True while a full-document review request is in flight. */
+  fullAnalysisPending?: boolean;
   noModel?: boolean;
   longText?: boolean;
   errorReason?: string;
@@ -56,12 +64,16 @@ export type SettingsPayload = {
   modelId: string;
   invocationStrategy: 'batch' | 'parallel';
   maxConcurrency: number;
-  activationMode: 'always' | 'panel_open';
+  activationMode: 'always' | 'panel_open' | 'off';
   fullDocumentCharacterLimit: number;
   targetLanguage: TargetLanguage;
+  /** Relative font scale and colors for replacement labels rendered above the editor text. */
+  replacementFontScale?: number;
+  replacementTextColor?: string;
+  replacementBackgroundColor?: string;
   /** When true, sends thinking:disabled to OpenAI-compatible endpoints (mirrors AI Tools thinking toggle) */
   disableThinking?: boolean;
-  /** When true, uses structured outputs / constrained decoding (json_schema for OpenAI, responseSchema for Gemini) */
+  /** When true, requests provider-side guided JSON decoding. */
   constrainedDecoding?: boolean;
 };
 
@@ -120,10 +132,13 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
       (settings.invocationStrategy === 'batch' || settings.invocationStrategy === 'parallel') &&
       Number.isInteger(settings.maxConcurrency) && (settings.maxConcurrency ?? 0) >= 1 &&
       (settings.maxConcurrency ?? 7) <= 6 &&
-      (settings.activationMode === 'always' || settings.activationMode === 'panel_open') &&
+      (settings.activationMode === 'always' || settings.activationMode === 'panel_open' || settings.activationMode === 'off') &&
       Number.isInteger(settings.fullDocumentCharacterLimit) &&
       (settings.fullDocumentCharacterLimit ?? 0) > 0 &&
       (settings.targetLanguage === undefined || ['EN', 'ES', 'CN'].includes(settings.targetLanguage)) &&
+      (settings.replacementFontScale === undefined || (typeof settings.replacementFontScale === 'number' && Number.isFinite(settings.replacementFontScale) && settings.replacementFontScale >= 0.25 && settings.replacementFontScale <= 2)) &&
+      (settings.replacementTextColor === undefined || (typeof settings.replacementTextColor === 'string' && (settings.replacementTextColor === 'transparent' || /^#[0-9a-f]{6}$/i.test(settings.replacementTextColor)))) &&
+      (settings.replacementBackgroundColor === undefined || (typeof settings.replacementBackgroundColor === 'string' && (settings.replacementBackgroundColor === 'transparent' || /^#[0-9a-f]{6}$/i.test(settings.replacementBackgroundColor)))) &&
       (settings.disableThinking === undefined || typeof settings.disableThinking === 'boolean') &&
       (settings.constrainedDecoding === undefined || typeof settings.constrainedDecoding === 'boolean');
   }

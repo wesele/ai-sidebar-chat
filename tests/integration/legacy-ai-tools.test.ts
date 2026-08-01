@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 describe('legacy AI tools regression', () => {
+  const requestBodies: Array<Record<string, unknown>> = [];
+
   beforeAll(async () => {
     localStorage.clear();
     const html = readFileSync('sidepanel.html', 'utf8');
@@ -9,9 +11,10 @@ describe('legacy AI tools regression', () => {
     document.body.innerHTML = body.replace(/<script[\s\S]*?<\/script>/gi, '');
     vi.stubGlobal('alert', vi.fn());
     vi.stubGlobal('confirm', vi.fn(() => true));
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/chat/completions')) {
+        if (init?.body) requestBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
         return new Response('data: {"choices":[{"delta":{"content":"Hello from fake model"}}]}\n\ndata: [DONE]\n\n', {
           status: 200,
           headers: { 'Content-Type': 'text/event-stream' },
@@ -59,7 +62,26 @@ describe('legacy AI tools regression', () => {
     (document.getElementById('stats-toggle-btn') as HTMLButtonElement).click();
     moreButton.click();
     (document.getElementById('align-toggle-btn') as HTMLButtonElement).click();
-    (document.getElementById('thinking-toggle-btn') as HTMLButtonElement).click();
+    const thinkingButton = document.getElementById('thinking-toggle-btn') as HTMLButtonElement;
+    thinkingButton.click();
+    const thinkingMenu = document.getElementById('thinking-menu') as HTMLElement;
+    expect(thinkingMenu.classList.contains('hidden')).toBe(false);
+    (thinkingMenu.querySelector('[data-thinking-mode="deepseek-off"]') as HTMLButtonElement).click();
+    expect(thinkingButton.textContent).toBe('DeepSeek off');
+    expect(thinkingMenu.classList.contains('hidden')).toBe(true);
+
+    chatInput.value = 'DeepSeek off';
+    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.getElementById('send-btn') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(requestBodies.at(-1)?.thinking).toEqual({ type: 'disabled' }));
+    await vi.waitFor(() => expect((document.getElementById('send-btn') as HTMLButtonElement).textContent).toBe('Send'));
+
+    thinkingButton.click();
+    (thinkingMenu.querySelector('[data-thinking-mode="nvidia-off"]') as HTMLButtonElement).click();
+    chatInput.value = 'NVIDIA off';
+    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.getElementById('send-btn') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(requestBodies.at(-1)?.chat_template_kwargs).toEqual({ enable_thinking: false }));
 
     moreButton.click();
     (document.getElementById('config-btn') as HTMLButtonElement).click();

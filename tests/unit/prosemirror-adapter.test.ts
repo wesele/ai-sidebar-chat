@@ -49,7 +49,7 @@ function attachMockView(
     const tr: MockTransaction = {
       ops,
       replaceWith(from, to, node: unknown) {
-        ops.push({ type: 'replaceWith', from, to, text: (node as any)?.textContent ?? '' });
+        ops.push({ type: 'replaceWith', from, to, text: (node as { textContent?: string })?.textContent ?? '' });
         return tr;
       },
       delete(from, to) {
@@ -74,7 +74,7 @@ function attachMockView(
     posAtDOM: options.posAtDOM ?? ((_node: Node, _offset: number) => 0),
   };
 
-  (element as any).pmViewDesc = { view };
+  (element as unknown as { pmViewDesc?: { view: unknown } }).pmViewDesc = { view };
   return { get dispatched() { return dispatched; }, view };
 }
 

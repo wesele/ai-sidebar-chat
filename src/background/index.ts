@@ -1,4 +1,4 @@
-import { chromeRuntime } from '../shared/browser-runtime';
+﻿import { chromeRuntime } from '../shared/browser-runtime';
 import { isExtensionMessage, type ExtensionMessage, type SettingsPayload } from '../shared/messages';
 import { AnalysisScheduler } from './analysis-scheduler';
 import { OpenAITransport } from './transports/openai-transport';
@@ -11,8 +11,9 @@ import { publicProviders } from './provider-registry';
 const runtime = chromeRuntime();
 void runtime.sidePanel.setActionBehavior?.().catch(() => undefined);
 const requests = new RequestRegistry();
-let settings: SettingsPayload = { providerId: '', modelId: '', invocationStrategy: 'batch', maxConcurrency: 3, activationMode: 'always', fullDocumentCharacterLimit: 20000, targetLanguage: 'EN', disableThinking: false, constrainedDecoding: false };
+let settings: SettingsPayload = { providerId: '', modelId: '', invocationStrategy: 'batch', maxConcurrency: 3, activationMode: 'always', fullDocumentCharacterLimit: 20000, targetLanguage: 'EN', disableThinking: true, constrainedDecoding: false };
 let settingsUpdatedInThisLifetime = false;
+let panelOpen = false;
 const settingsReady = runtime.storage.get<SettingsPayload>('writingAssistantSettings').then((saved) => {
   if (
     !settingsUpdatedInThisLifetime &&
@@ -23,7 +24,7 @@ const settingsReady = runtime.storage.get<SettingsPayload>('writingAssistantSett
       correlationId: 'storage-restore',
       payload: saved,
     })
-  ) settings = saved;
+  ) settings = { ...settings, ...saved };
 }).catch(() => undefined);
 const send = (tabId: number, message: ExtensionMessage) => runtime.tabs.send(tabId, message);
 
@@ -59,9 +60,27 @@ runtime.messaging.onMessage((message, sender) => {
   if (shouldRouteToContent(message as ExtensionMessage, tabId)) void routePanelCommand(message as ExtensionMessage);
   if (message.type === 'CANCEL_ANALYSIS') { requests.cancel(message.payload.requestId); return; }
   if (message.type === 'OPEN_SIDE_PANEL') { void runtime.sidePanel.open(tabId).catch(() => undefined); return; }
-  if (message.type === 'WRITING_MODEL_STATUS_REQUEST') { void provider().then(config => tabId === undefined ? undefined : runtime.tabs.send(tabId, { v: 1, type: 'WRITING_MODEL_STATUS', correlationId: message.correlationId, payload: { available: Boolean(config) } })).catch(() => undefined); return; }
+  if (message.type === 'WRITING_MODEL_STATUS_REQUEST') {
+    void provider().then(async config => {
+      if (tabId === undefined) return;
+      await send(tabId, {
+        v: 1,
+        type: 'PANEL_CONNECTION_CHANGED',
+        correlationId: message.correlationId,
+        payload: { open: panelOpen },
+      });
+      await runtime.tabs.send(tabId, {
+        v: 1,
+        type: 'WRITING_MODEL_STATUS',
+        correlationId: message.correlationId,
+        payload: { available: Boolean(config) },
+      });
+    }).catch(() => undefined);
+    return;
+  }
   if (message.type === 'ANALYSIS_REQUESTED') void analyze(message, tabId);
   if (message.type === 'FULL_ANALYSIS_REQUESTED') void full(message, tabId);
+  if (message.type === 'PANEL_CONNECTION_CHANGED') panelOpen = message.payload.open;
 });
 
 async function provider(): Promise<OpenAITransport | GeminiTransport | undefined> { await settingsReady; const state = await runtime.storage.get<unknown>('sidebarState'); const selected = resolveWritingProvider(state, settings); return !selected ? undefined : selected.kind === 'gemini' ? new GeminiTransport(selected, undefined, settings.disableThinking, settings.constrainedDecoding) : new OpenAITransport(selected, undefined, settings.disableThinking, settings.constrainedDecoding); }
@@ -70,12 +89,17 @@ const failureCode = (error: unknown): string => {
   if (status) return `HTTP_${status}`;
   const code = (error as { code?: string }).code;
   if (code === 'NETWORK') return 'NETWORK';
+  if (code === 'TIMEOUT') return 'TIMEOUT';
+  if (code === 'CANCELLED') return 'CANCELLED';
+  if (code === 'INVALID_RESPONSE') return 'INVALID_RESPONSE';
   if (code === 'RESPONSE_DECODE') return 'RESPONSE_DECODE';
   if (code === 'EMPTY_RESPONSE') return 'EMPTY_RESPONSE';
+  if (code === 'MODEL_TRUNCATED') return 'MODEL_TRUNCATED';
+  if (code === 'TOOL_CALL_MISSING') return 'TOOL_CALL_MISSING';
   if (code === 'PARSE_ERROR') return 'PARSE_ERROR';
   if (error instanceof SyntaxError) return 'PARSE_ERROR';
   return 'NETWORK';
 };
 
-async function analyze(message: Extract<ExtensionMessage, { type: 'ANALYSIS_REQUESTED' }>, tabId?: number): Promise<void> { try { const transport = await provider(); if (!transport) { if (tabId !== undefined) await send(tabId, { v: 1, type: 'ANALYSIS_FAILED', correlationId: message.correlationId, payload: { requestId: message.payload.requestId, code: 'NO_MODEL', retryable: false } }); return; } if (tabId === undefined) return; const uiLanguage = (await runtime.storage.get<string>('sidebarLanguage')) || 'zh-CN'; const scheduler = new AnalysisScheduler((r, signal) => transport.analyze(r, signal, uiLanguage)); for (const payload of await requests.retry(message.payload.requestId, signal => scheduler.schedule(message.payload, { invocationStrategy: settings.invocationStrategy, maxConcurrency: settings.maxConcurrency }, signal))) await send(tabId, { v: 1, type: 'ANALYSIS_COMPLETED', correlationId: message.correlationId, payload }); } catch (error) { if ((error as { name?: string }).name !== 'AbortError' && tabId !== undefined) await send(tabId, { v: 1, type: 'ANALYSIS_FAILED', correlationId: message.correlationId, payload: { requestId: message.payload.requestId, code: failureCode(error), retryable: ![401, 403].includes((error as { status?: number }).status ?? 0) } }).catch(() => undefined); } finally { requests.complete(message.payload.requestId); } }
-async function full(message: Extract<ExtensionMessage, { type: 'FULL_ANALYSIS_REQUESTED' }>, tabId?: number): Promise<void> { try { const transport = await provider(); if (!transport) { if (tabId !== undefined) await send(tabId, { v: 1, type: 'ANALYSIS_FAILED', correlationId: message.correlationId, payload: { requestId: message.payload.requestId, code: 'NO_MODEL', retryable: false } }); return; } if (tabId === undefined) return; const uiLanguage = (await runtime.storage.get<string>('sidebarLanguage')) || 'zh-CN'; const payload = await requests.retry(message.payload.requestId, signal => transport.full(message.payload, signal, uiLanguage)); await send(tabId, { v: 1, type: 'ANALYSIS_COMPLETED', correlationId: message.correlationId, payload }); } catch (error) { if ((error as { name?: string }).name !== 'AbortError' && tabId !== undefined) await send(tabId, { v: 1, type: 'ANALYSIS_FAILED', correlationId: message.correlationId, payload: { requestId: message.payload.requestId, code: failureCode(error), retryable: ![401, 403].includes((error as { status?: number }).status ?? 0) } }).catch(() => undefined); } finally { requests.complete(message.payload.requestId); } }
+async function analyze(message: Extract<ExtensionMessage, { type: 'ANALYSIS_REQUESTED' }>, tabId?: number): Promise<void> { try { const transport = await provider(); if (!transport) { if (tabId !== undefined) await send(tabId, { v: 1, type: 'ANALYSIS_FAILED', correlationId: message.correlationId, payload: { requestId: message.payload.requestId, code: 'NO_MODEL', retryable: false } }); return; } if (tabId === undefined) return; const uiLanguage = (await runtime.storage.get<string>('sidebarLanguage')) || 'zh-CN'; const scheduler = new AnalysisScheduler((r, signal) => transport.analyze(r, signal, uiLanguage)); await requests.retry(message.payload.requestId, signal => scheduler.schedule(message.payload, { invocationStrategy: settings.invocationStrategy, maxConcurrency: settings.maxConcurrency }, signal, payload => send(tabId, { v: 1, type: 'ANALYSIS_COMPLETED', correlationId: message.correlationId, payload }).catch(() => undefined))); } catch (error) { const code = failureCode(error); if (code !== 'CANCELLED' && (error as { name?: string }).name !== 'AbortError' && tabId !== undefined) await send(tabId, { v: 1, type: 'ANALYSIS_FAILED', correlationId: message.correlationId, payload: { requestId: message.payload.requestId, code, retryable: ![401, 403, 408].includes((error as { status?: number }).status ?? 0) && code !== 'TIMEOUT' } }).catch(() => undefined); } finally { requests.complete(message.payload.requestId); } }
+async function full(message: Extract<ExtensionMessage, { type: 'FULL_ANALYSIS_REQUESTED' }>, tabId?: number): Promise<void> { try { const transport = await provider(); if (!transport) { if (tabId !== undefined) await send(tabId, { v: 1, type: 'ANALYSIS_FAILED', correlationId: message.correlationId, payload: { requestId: message.payload.requestId, code: 'NO_MODEL', retryable: false } }); return; } if (tabId === undefined) return; const uiLanguage = (await runtime.storage.get<string>('sidebarLanguage')) || 'zh-CN'; const payload = await requests.retry(message.payload.requestId, signal => transport.full(message.payload, signal, uiLanguage)); await send(tabId, { v: 1, type: 'ANALYSIS_COMPLETED', correlationId: message.correlationId, payload }); } catch (error) { const code = failureCode(error); if (code !== 'CANCELLED' && (error as { name?: string }).name !== 'AbortError' && tabId !== undefined) await send(tabId, { v: 1, type: 'ANALYSIS_FAILED', correlationId: message.correlationId, payload: { requestId: message.payload.requestId, code, retryable: ![401, 403, 408].includes((error as { status?: number }).status ?? 0) && code !== 'TIMEOUT' } }).catch(() => undefined); } finally { requests.complete(message.payload.requestId); } }

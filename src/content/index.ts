@@ -23,12 +23,15 @@ let lastEligible: HTMLElement | undefined;
 import type { TargetLanguage } from '../shared/messages';
 
 let settings = {
-  activationMode: 'always' as 'always' | 'panel_open',
+  activationMode: 'always' as 'always' | 'panel_open' | 'off',
   fullDocumentCharacterLimit: 20_000,
   hasModel: false,
   invocationStrategy: 'batch' as 'batch' | 'parallel',
   maxConcurrency: 3,
   targetLanguage: 'EN' as TargetLanguage,
+  replacementFontScale: 0.8,
+  replacementTextColor: '#b85000',
+  replacementBackgroundColor: '#fff3e6',
 };
 
 const send = (message: RuntimeMessage): void => {
@@ -68,6 +71,11 @@ const start = (): void => {
     (issueId) => session?.applyIssue(issueId),
   );
   renderer.setEditorFontSize(getComputedStyle(adapter.element).fontSize);
+  renderer.setReplacementAppearance(
+    settings.replacementFontScale,
+    settings.replacementTextColor,
+    settings.replacementBackgroundColor,
+  );
 
   const publish = (cache: NonNullable<ReturnType<WritingSession['current']>>): void => {
     if (!renderer || !session) return;
@@ -153,12 +161,15 @@ installEditorDiscovery((element) => {
 
 void runtime.storage
   .get<{
-    activationMode?: 'always' | 'panel_open';
+    activationMode?: 'always' | 'panel_open' | 'off';
     fullDocumentCharacterLimit?: number;
     invocationStrategy?: 'batch' | 'parallel';
-    maxConcurrency?: number;
-    targetLanguage?: TargetLanguage;
-  }>('writingAssistantSettings')
+     maxConcurrency?: number;
+     targetLanguage?: TargetLanguage;
+     replacementFontScale?: number;
+     replacementTextColor?: string;
+     replacementBackgroundColor?: string;
+   }>('writingAssistantSettings')
   .then((saved) => {
     settings = {
       ...settings,
@@ -167,6 +178,9 @@ void runtime.storage
       invocationStrategy: saved?.invocationStrategy ?? 'batch',
       maxConcurrency: saved?.maxConcurrency ?? 3,
       targetLanguage: saved?.targetLanguage ?? 'EN',
+      replacementFontScale: saved?.replacementFontScale ?? 0.8,
+      replacementTextColor: saved?.replacementTextColor ?? '#b85000',
+      replacementBackgroundColor: saved?.replacementBackgroundColor ?? '#fff3e6',
     };
     initialized = true;
     activation.update(settings.activationMode);
@@ -190,7 +204,11 @@ runtime.messaging.onMessage((message) => {
     const action = activation.update(settings.activationMode);
     if (action === 'stop') stop();
     else {
-      stop();
+      renderer?.setReplacementAppearance(
+        settings.replacementFontScale,
+        settings.replacementTextColor,
+        settings.replacementBackgroundColor,
+      );
       start();
     }
   } else if (message.type === 'WRITING_MODEL_STATUS') {

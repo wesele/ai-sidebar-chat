@@ -31,7 +31,7 @@ describe('WritingSession projected detection status', () => {
       (requestId, revision) => fullRequests.push({ requestId, revision }),
       () => undefined,
       () => undefined,
-      () => ({ hasModel: true, fullDocumentCharacterLimit: 20_000 }),
+      () => ({ hasModel: true, fullDocumentCharacterLimit: 20_000, targetLanguage: 'EN' }),
     );
 
     session.start();
@@ -40,6 +40,7 @@ describe('WritingSession projected detection status', () => {
     expect(unitRequests).toHaveLength(1);
     expect(fullRequests).toHaveLength(1);
     expect(session.viewState()?.status).toBe('queued');
+    expect(session.viewState()?.fullAnalysisPending).toBe(true);
 
     const unitRequest = unitRequests[0];
     session.accept({
@@ -64,6 +65,7 @@ describe('WritingSession projected detection status', () => {
     };
     session.acceptFull(fullResponse);
     expect(session.viewState()?.status).toBe('analyzed');
+    expect(session.viewState()?.fullAnalysisPending).toBe(false);
     session.stop();
   });
 
@@ -85,7 +87,7 @@ describe('WritingSession projected detection status', () => {
     } as EditorAdapter;
     const session = new WritingSession(
       adapter, (request) => requests.push(request), () => undefined, () => undefined,
-      () => undefined, () => ({ hasModel: true, fullDocumentCharacterLimit: 20_000 }),
+      () => undefined, () => ({ hasModel: true, fullDocumentCharacterLimit: 20_000, targetLanguage: 'EN' }),
     );
     session.start();
     vi.advanceTimersByTime(1500);

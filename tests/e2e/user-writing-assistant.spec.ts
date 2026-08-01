@@ -45,6 +45,10 @@ async function injectWritingSettings(
   provider: Record<string, unknown>,
   settings: Record<string, unknown>,
 ): Promise<void> {
+  // The legacy chat panel initializes asynchronously and may persist its
+  // default provider while the page is loading. Inject only after that write
+  // has completed so the writing assistant cannot fall back to llama3.
+  await sidepanelPage.locator('#model-select option').first().waitFor({ state: 'attached', timeout: 10_000 });
   await sidepanelPage.evaluate(
     async ({ p, s }: { p: Record<string, unknown>; s: Record<string, unknown> }) => {
       await chrome.storage.local.set({
@@ -85,6 +89,7 @@ const WRITING_SETTINGS = {
   activationMode: 'always' as const,
   fullDocumentCharacterLimit: 20_000,
   targetLanguage: 'EN' as const,
+  constrainedDecoding: process.env.REAL_LLM_CONSTRAINED_DECODING === 'true',
 };
 
 // ---------------------------------------------------------------------------
@@ -154,6 +159,8 @@ test('1. textarea: overlay attaches, dot reaches problem/improvement, mark appli
     await expect(mark).toBeVisible({ timeout: 10_000 });
     const markText = await mark.innerText();
     console.log('[test-1] Mark text:', markText);
+    await editorPage.screenshot({ path: testInfo.outputPath('local-suggestion-position.png') });
+    console.log('[test-1] Local suggestion screenshot:', testInfo.outputPath('local-suggestion-position.png'));
 
     // Applying the mark must change the editor value
     await editor.focus();

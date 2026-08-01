@@ -9,6 +9,7 @@ const settings: SettingsPayload = {
   maxConcurrency: 3,
   activationMode: 'always',
   fullDocumentCharacterLimit: 20_000,
+  targetLanguage: 'EN',
 };
 
 const storage = new Map<string, unknown>([
@@ -154,6 +155,30 @@ describe('background service-worker entry', () => {
       payload: { tabId: 7 },
     }, 7);
     await vi.waitFor(() => expect(openedPanels).toEqual([7]));
+  });
+
+  it('replays the panel connection state when content requests its model status', async () => {
+    dispatch({
+      v: 1,
+      type: 'PANEL_CONNECTION_CHANGED',
+      correlationId: 'panel-open',
+      payload: { open: true },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    tabMessages.length = 0;
+
+    dispatch({
+      v: 1,
+      type: 'WRITING_MODEL_STATUS_REQUEST',
+      correlationId: 'status-replay',
+      payload: {},
+    }, 7);
+    await vi.waitFor(() => expect(tabMessages.some(({ message }) =>
+      message.type === 'PANEL_CONNECTION_CHANGED')).toBe(true));
+    expect(tabMessages[0]).toMatchObject({
+      tabId: 7,
+      message: { type: 'PANEL_CONNECTION_CHANGED', payload: { open: true } },
+    });
   });
 
   it('runs unit and full-document requests through the configured provider', async () => {

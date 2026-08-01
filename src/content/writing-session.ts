@@ -153,6 +153,22 @@ export class WritingSession {
     }
   }
 
+  private resolvePendingUnits(pending: PendingRequest): void {
+    if (!this.cache || pending.kind !== 'units') return;
+    for (const paragraph of this.cache.paragraphs) {
+      if (pending.remaining.has(paragraph.id) && paragraph.status === 'queued') {
+        paragraph.status = 'analyzed';
+        paragraph.analysisRevision = this.cache.revision;
+      }
+      for (const sentence of paragraph.sentences) {
+        if (pending.remaining.has(sentence.id) && sentence.status === 'queued') {
+          sentence.status = 'analyzed';
+          sentence.analysisRevision = this.cache.revision;
+        }
+      }
+    }
+  }
+
   fail(requestId: string, code?: string): void {
     const pending = this.pending.get(requestId);
     if (!pending || !this.cache) return;
@@ -215,6 +231,10 @@ export class WritingSession {
   }
 
   leaveParagraph(completedParagraphId = this.lastParagraphId): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
     const snapshot = this.adapter.readSnapshot();
     if (this.cache && snapshot.text.length > this.settings().fullDocumentCharacterLimit) {
       this.cache.status = 'error';
@@ -229,13 +249,15 @@ export class WritingSession {
     const units: AnalysisRequest['units'] = [];
 
     for (const paragraph of this.cache.paragraphs) {
+      const isCompletedTarget = paragraphComplete &&
+        (completedParagraphId === undefined || paragraph.id === completedParagraphId);
       for (const sentence of paragraph.sentences) {
         const inside =
           snapshot.selection !== null &&
           snapshot.selection.start >= sentence.start &&
           snapshot.selection.start <= sentence.end;
         const sentenceText = snapshot.text.slice(sentence.start, sentence.end);
-        if (canAnalyze(sentence.status, sentenceText, this.composing, inside, Date.now() - this.lastInputAt)) {
+        if (canAnalyze(sentence.status, sentenceText, this.composing, isCompletedTarget ? false : inside, Date.now() - this.lastInputAt)) {
           sentence.status = 'queued';
           const sentenceIndex = paragraph.sentences.indexOf(sentence);
           const before = snapshot.text.slice(paragraph.start, sentence.start).trim() || this.previousSentenceText(paragraph, sentenceIndex, snapshot.text);
@@ -252,8 +274,6 @@ export class WritingSession {
         }
       }
 
-      const isCompletedTarget = paragraphComplete &&
-        (completedParagraphId === undefined || paragraph.id === completedParagraphId);
       const paragraphText = snapshot.text.slice(paragraph.start, paragraph.end);
       if (canAnalyzeParagraph(paragraph.status, paragraphText, this.composing, isCompletedTarget)) {
         paragraph.status = 'queued';
@@ -275,10 +295,10 @@ export class WritingSession {
     if (!units.length) return;
     const requestId = generateUUID();
     const strategy = this.settings().invocationStrategy ?? 'batch';
-    const maxConcurrency = this.settings().maxConcurrency ?? 3;
-    // Estimate total API calls: batch=ceil(units/16), parallel=units.length capped by concurrency slots
+    // Batch responses are grouped by the scheduler; parallel mode sends one
+    // request per unit even when the worker pool limits concurrency.
     const totalApiCalls = strategy === 'parallel'
-      ? Math.min(units.length, Math.max(1, Math.min(6, maxConcurrency)))
+      ? units.length
       : Math.ceil(units.length / 16);
     this.pending.set(requestId, {
       kind: 'units',
@@ -315,13 +335,14 @@ export class WritingSession {
 
   accept(response: AnalysisResponse): void {
     const pending = this.pending.get(response.requestId);
-    if (
-      !this.cache ||
-      !pending ||
-      pending.kind !== 'units' ||
-      pending.revision !== this.cache.revision ||
-      response.documentRevision !== this.cache.revision
-    ) return;
+    if (!this.cache || !pending || pending.kind !== 'units') return;
+    if (pending.revision !== this.cache.revision || response.documentRevision !== this.cache.revision) {
+      // The cache has moved on (a newer analysis round owns these units); the
+      // stale request can never match again, so drop it to avoid an orphaned
+      // pending that would keep the dot "analyzing" forever.
+      this.pending.delete(response.requestId);
+      return;
+    }
 
     const snapshot = this.adapter.readSnapshot();
     const expected = this.cache.paragraphs.flatMap((paragraph) => [
@@ -391,9 +412,18 @@ export class WritingSession {
       this.cache.analysisRevision = this.cache.revision;
     }
 
+    pending.apiCallsDone = Math.min(pending.apiCallsDone + 1, pending.totalApiCalls);
     for (const unit of response.units) pending.remaining.delete(unit.unitId);
-    if (pending.remaining.size === 0) this.pending.delete(response.requestId);
-    else pending.apiCallsDone += 1;
+    if (pending.remaining.size === 0) {
+      this.pending.delete(response.requestId);
+    } else {
+      if (pending.apiCallsDone >= pending.totalApiCalls) {
+        // All expected batch responses arrived; units still missing were
+        // omitted by the model, so treat them as analyzed with no findings.
+        this.resolvePendingUnits(pending);
+        this.pending.delete(response.requestId);
+      }
+    }
     this.publish(this.cache);
   }
 
@@ -410,7 +440,13 @@ export class WritingSession {
       requestId: result.requestId,
       documentRevision: this.cache.revision,
     });
-    if (!valid) return;
+    if (!valid) {
+      this.pending.delete(result.requestId);
+      this.cache.status = 'error';
+      this.cache.errorReason = 'INVALID_RESPONSE';
+      this.publish(this.cache);
+      return;
+    }
     this.pending.delete(result.requestId);
     this.cache.fullResult = valid;
     this.cache.status = 'analyzed';
@@ -468,6 +504,12 @@ export class WritingSession {
     const issues = this.issues();
     const item = (scope: 'sentence' | 'paragraph') =>
       issues.find((issue) => issue.scope === scope && issue.start <= caret && caret <= issue.end);
+    const currentParagraph = this.cache.paragraphs.find((paragraph) =>
+      paragraph.start <= caret && caret <= paragraph.end,
+    );
+    const currentParagraphIssues = currentParagraph
+      ? issues.filter((issue) => issue.start >= currentParagraph.start && issue.end <= currentParagraph.end)
+      : [];
     const project = (issue?: Issue) => issue && ({
       issueId: issue.issueId,
       original: issue.original,
@@ -486,12 +528,21 @@ export class WritingSession {
         paragraph: issues.filter((issue) => issue.scope === 'paragraph').map(projectPreview),
       },
       currentSentence: project(item('sentence')),
-      currentParagraph: project(item('paragraph')),
+      currentParagraph: project(currentParagraph?.issue),
+      currentParagraphIssues: currentParagraphIssues.length
+        ? currentParagraphIssues.map((issue) => ({
+          issueId: issue.issueId,
+          original: issue.original,
+          replacement: issue.replacement,
+          reason: issue.reason,
+        }))
+        : undefined,
       fullResult: this.cache.fullResult && {
         severity: this.cache.fullResult.severity,
         summary: this.cache.fullResult.summary,
         suggestions: this.cache.fullResult.suggestions,
       },
+      fullAnalysisPending: Array.from(this.pending.values()).some((pending) => pending.kind === 'full'),
       longText: this.cache.textLength > this.settings().fullDocumentCharacterLimit,
       noModel: !this.settings().hasModel,
       errorReason: this.cache.errorReason,

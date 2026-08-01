@@ -63,4 +63,135 @@ describe('domain boundary behavior', () => {
     expect(validateResponse({ schemaVersion: '1', requestId: 'wrong', documentRevision: 1, units: [] }, expected).rejected).toEqual(['response']);
     expect(validateResponse({ schemaVersion: '1', requestId: 'r', documentRevision: 1, units: [null] }, expected).rejected).toEqual(['unit']);
   });
+
+  it('repairs miscounted CJK/full-width offsets from reasoning models', () => {
+    const text = 'How can I 直到？';
+    const result = validateResponse({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1,
+      units: [{
+        unitId: 's', unitRevision: 1,
+        issues: [
+          { scope: 'sentence', severity: 'problem', start: 0, end: 14, original: 'How can I 直到？', replacement: 'How can I find out?', reason: 'Non-English sentence.', category: 'non_english' },
+          { scope: 'local', severity: 'problem', start: 8, end: 10, original: '直到', replacement: 'find out', reason: 'Non-English phrase.', category: 'non_english' },
+        ],
+      }],
+    }, { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text }] });
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toHaveLength(1);
+    const [sentence, local] = result.valid[0].issues;
+    expect([sentence.start, sentence.end]).toEqual([0, text.length]);
+    expect(text.slice(local.start, local.end)).toBe('直到');
+  });
+
+  it('isolates invalid single items while keeping the rest of the unit valid', () => {
+    const text = 'Hiw can I tell you it is the frist 狒狒。';
+    const result = validateResponse({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1,
+      units: [{
+        unitId: 's', unitRevision: 1,
+        issues: [
+          { scope: 'local', severity: 'problem', start: 0, end: 3, original: 'Hiw', replacement: 'How', reason: 'Misspelling.', category: 'spelling' },
+          { scope: 'local', severity: 'problem', start: 23, end: 28, original: 'frist', replacement: 'first', reason: 'Misspelling.', category: 'spelling' },
+          { scope: 'local', severity: 'problem', start: 34, end: 37, original: '狒狒。', replacement: '', reason: 'Non-English.', category: 'non_english' },
+        ],
+      }],
+    }, { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text }] });
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toHaveLength(1);
+    expect(result.valid[0].issues.map((issue) => issue.original)).toEqual(['Hiw', 'frist']);
+  });
+
+  it('isolates empty replacements and normalizes out-of-enum categories', () => {
+    const text = 'This is ont good 狒狒。';
+    const result = validateResponse({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1,
+      units: [{
+        unitId: 's', unitRevision: 1,
+        issues: [
+          { scope: 'local', severity: 'problem', start: 8, end: 11, original: 'ont', replacement: 'not', reason: 'Misspelling.', category: 'spelling' },
+          { scope: 'local', severity: 'problem', start: 12, end: 17, original: ' good', replacement: '', reason: 'Junk.', category: 'punctuation' },
+          { scope: 'local', severity: 'problem', start: 18, end: 21, original: '狒狒。', replacement: 'thing.', reason: 'Non-English.', category: 'punctuation' },
+        ],
+      }],
+    }, { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text }] });
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toHaveLength(1);
+    const issues = result.valid[0].issues;
+    expect(issues.map((issue) => issue.original)).toEqual(['ont', '狒狒。']);
+    expect(issues[1].category).toBe('other');
+  });
+
+  it('accepts a unit whose every issue is invalid as analyzed with no findings', () => {
+    const result = validateResponse({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1,
+      units: [{
+        unitId: 's', unitRevision: 1,
+        issues: [
+          { scope: 'local', severity: 'problem', start: 0, end: 3, original: 'Bad', replacement: 'Bad', reason: 'No-op.', category: 'spelling' },
+          { scope: 'local', severity: 'problem', start: 4, end: 8, original: 'text', replacement: '', reason: 'Empty replacement.', category: 'spelling' },
+        ],
+      }],
+    }, { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text: 'Bad text.' }] });
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toHaveLength(1);
+    expect(result.valid[0].issues).toEqual([]);
+  });
+
+  it('drops hallucinated originals that are absent from the unit without failing it', () => {
+    const result = validateResponse({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1,
+      units: [{
+        unitId: 's', unitRevision: 1,
+        issues: [{ scope: 'local', severity: 'problem', start: 2, end: 8, original: 'notthere', replacement: 'something', reason: 'Nope.', category: 'spelling' }],
+      }],
+    }, { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text: 'A plain text.' }] });
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toHaveLength(1);
+    expect(result.valid[0].issues).toEqual([]);
+  });
+
+  it('resolves duplicate local spans to the occurrence nearest the reported offset', () => {
+    const text = 'bad good bad';
+    const result = validateResponse({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1,
+      units: [{
+        unitId: 's', unitRevision: 1,
+        issues: [{ scope: 'local', severity: 'problem', start: 9, end: 12, original: 'bad', replacement: 'fine', reason: 'Word choice.', category: 'word_choice' }],
+      }],
+    }, { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text }] });
+    expect(result.rejected).toEqual([]);
+    expect(result.valid[0].issues[0].start).toBe(9);
+    expect(result.valid[0].issues[0].end).toBe(12);
+  });
+
+  it('downgrades an over-scoped sentence finding to a local issue', () => {
+    const text = 'Hiw can I tell you it is the frist 狒狒。';
+    const result = validateResponse({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1,
+      units: [{
+        unitId: 's', unitRevision: 1,
+        issues: [{ scope: 'sentence', severity: 'problem', start: 34, end: 39, original: '狒狒。', replacement: 'thing.', reason: 'Non-English.', category: 'non_english' }],
+      }],
+    }, { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text }] });
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toHaveLength(1);
+    const [issue] = result.valid[0].issues;
+    expect(issue.scope).toBe('local');
+    expect(text.slice(issue.start, issue.end)).toBe('狒狒。');
+  });
+
+  it('drops repaired local issues that overlap protected spans without failing the unit', () => {
+    const text = 'See https://a.test for info.';
+    const urlStart = text.indexOf('https://a.test');
+    const result = validateResponse({
+      schemaVersion: '1', requestId: 'r', documentRevision: 1,
+      units: [{
+        unitId: 's', unitRevision: 1,
+        issues: [{ scope: 'local', severity: 'problem', start: urlStart + 3, end: urlStart + 18, original: 'https://a.test', replacement: 'the link', reason: 'Do not flag URLs.', category: 'other' }],
+      }],
+    }, { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text }] });
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toHaveLength(1);
+    expect(result.valid[0].issues).toEqual([]);
+  });
 });

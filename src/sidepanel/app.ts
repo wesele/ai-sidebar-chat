@@ -5,9 +5,12 @@ export interface WritingSettings {
   modelId: string;
   invocationStrategy: 'batch' | 'parallel';
   maxConcurrency: number;
-  activationMode: 'always' | 'panel_open';
+  activationMode: 'always' | 'panel_open' | 'off';
   fullDocumentCharacterLimit: number;
   targetLanguage: TargetLanguage;
+  replacementFontScale: number;
+  replacementTextColor: string;
+  replacementBackgroundColor: string;
   /** Mirrors AI Tools thinking toggle: when true, disables model thinking/reasoning */
   disableThinking?: boolean;
   /** When true, uses structured outputs / constrained decoding (json_schema for OpenAI, responseSchema for Gemini) */
@@ -22,9 +25,34 @@ export const defaults: WritingSettings = {
   activationMode: 'always',
   fullDocumentCharacterLimit: 20_000,
   targetLanguage: 'EN',
-  disableThinking: false,
+  replacementFontScale: 0.8,
+  replacementTextColor: '#b85000',
+  replacementBackgroundColor: '#fff3e6',
+  disableThinking: true,
   constrainedDecoding: false,
 };
+
+const TEXT_COLOR_PRESETS: readonly string[] = [
+  '#b85000',
+  '#c2410c',
+  '#b91c1c',
+  '#9d174d',
+  '#6d28d9',
+  '#1d4ed8',
+  '#0f766e',
+  '#3f6212',
+];
+
+const BACKGROUND_COLOR_PRESETS: readonly string[] = [
+  '#fff3e6',
+  '#fef3c7',
+  '#fee2e2',
+  '#fce7f3',
+  '#ede9fe',
+  '#dbeafe',
+  '#d1fae5',
+  'transparent',
+];
 
 type PublicProvider = { id: string; name: string; models: string[] };
 type IssueScope = 'local' | 'sentence' | 'paragraph';
@@ -36,6 +64,7 @@ export class WritingAssistantPanel {
   private providers: PublicProvider[] = [];
   private settings: WritingSettings = { ...defaults };
   private settingsOpen = false;
+  private settingsDialog?: HTMLElement;
   private previewScope?: IssueScope;
   private applyResult?: ApplyResultPayload;
   private showFullText = false;
@@ -125,10 +154,71 @@ export class WritingAssistantPanel {
     return label;
   }
 
+  private colorField(
+    labelText: string,
+    current: string,
+    presets: readonly string[],
+  ): { field: HTMLElement; input: HTMLInputElement; read: () => string } {
+    let value = /^#[0-9a-f]{6}$/i.test(current) ? current.toLowerCase() : current.toLowerCase() === 'transparent' ? 'transparent' : '';
+
+    const root = document.createElement('div');
+    root.className = 'wa-color-field';
+    const text = document.createElement('span');
+    text.className = 'wa-color-label';
+    text.textContent = labelText;
+    root.append(text);
+
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = /^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff';
+
+    const swatchRow = document.createElement('div');
+    swatchRow.className = 'wa-color-presets';
+
+    const render = (): void => {
+      for (const swatch of Array.from(swatchRow.children) as HTMLButtonElement[]) {
+        const active = swatch.dataset.color === value;
+        swatch.classList.toggle('active', active);
+        swatch.setAttribute('aria-pressed', String(active));
+      }
+    };
+
+    for (const preset of presets) {
+      const swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.className = 'wa-color-swatch';
+      const transparent = preset.toLowerCase() === 'transparent';
+      swatch.dataset.color = preset.toLowerCase();
+      if (transparent) swatch.classList.add('wa-color-swatch-transparent');
+      swatch.style.backgroundColor = transparent ? 'transparent' : preset;
+      swatch.title = transparent ? '透明' : preset;
+      swatch.setAttribute('aria-label', transparent ? '透明' : preset);
+      swatch.addEventListener('click', () => {
+        value = swatch.dataset.color ?? value;
+        input.value = value === 'transparent' ? '#ffffff' : value;
+        render();
+      });
+      swatchRow.append(swatch);
+    }
+
+    input.addEventListener('input', () => {
+      value = input.value.toLowerCase();
+      render();
+    });
+
+    render();
+    swatchRow.append(input);
+    root.append(swatchRow);
+    return { field: root, input, read: () => value };
+  }
+
   private render(): void {
     // Remove any existing modal backdrop that lives on document.body
     this.errorModalBackdrop?.remove();
     this.errorModalBackdrop = undefined;
+    // Keep an open settings dialog untouched: rebuilding it would close the
+    // native color picker and drop unsaved edits.
+    if (this.settingsOpen && this.settingsDialog?.isConnected) return;
     this.root.replaceChildren();
     const state = this.state;
     const title = document.createElement('h2');
@@ -326,11 +416,14 @@ export class WritingAssistantPanel {
     if (this.showFullText) {
       const full = document.createElement('section');
       full.className = 'wa-full-card';
-      full.dataset.severity = state?.fullResult?.severity ?? 'none';
+      const pending = Boolean(state?.fullAnalysisPending) && !state?.fullResult;
+      full.dataset.severity = pending ? 'pending' : state?.fullResult?.severity ?? 'none';
       const fullTitle = document.createElement('h3');
       fullTitle.textContent = '全文';
       const fullSummary = document.createElement('p');
-      fullSummary.textContent = state?.fullResult?.summary ?? '暂无全文建议';
+      fullSummary.textContent = pending
+        ? '正在评审…'
+        : state?.fullResult?.summary ?? '暂无全文建议';
       full.append(fullTitle, fullSummary);
       const suggestions = state?.fullResult?.suggestions ?? [];
       if (suggestions.length) {
@@ -345,36 +438,42 @@ export class WritingAssistantPanel {
       }
       this.root.append(full);
     } else {
-      for (const [heading, issue] of [
-        ['当前句子', state?.currentSentence],
-        ['当前段落', state?.currentParagraph],
-      ] as const) {
-        // 4. If current paragraph (or sentence) has no issue, do not display the whole box
-        if (!issue) continue;
-        const section = document.createElement('section');
-        section.className = 'wa-section';
-        const sectionTitle = document.createElement('h3');
-        sectionTitle.textContent = heading;
-        section.append(sectionTitle);
-        const change = document.createElement('p');
-        change.className = 'wa-change-text';
-        change.textContent = `${issue.original} → ${issue.replacement}`;
-        const reason = document.createElement('p');
-        reason.className = 'wa-reason-text';
-        reason.textContent = issue.reason;
-        const applyBtn = this.button('应用修改', () => {
-          if (this.tabId === undefined || !state) return;
-          this.command('APPLY_ISSUE', {
-            tabId: this.tabId,
-            editorId: state.editorId,
-            revision: state.revision,
-            issueId: issue.issueId,
+      const appendIssues = (
+        issues: Array<NonNullable<EditorViewState['currentSentence']>>,
+      ): void => {
+        for (const issue of issues) {
+          const section = document.createElement('section');
+          section.className = 'wa-section';
+          section.dataset.issueId = issue.issueId;
+          const change = document.createElement('p');
+          change.className = 'wa-change-text';
+          change.textContent = `${issue.original} → ${issue.replacement}`;
+          const reason = document.createElement('p');
+          reason.className = 'wa-reason-text';
+          reason.textContent = issue.reason;
+          const applyBtn = this.button('应用', () => {
+            if (this.tabId === undefined || !state) return;
+            this.command('APPLY_ISSUE', {
+              tabId: this.tabId,
+              editorId: state.editorId,
+              revision: state.revision,
+              issueId: issue.issueId,
+            });
           });
-        });
-        applyBtn.className = 'wa-btn-primary';
-        section.append(change, reason, applyBtn);
-        this.root.append(section);
-      }
+          applyBtn.className = 'wa-btn-primary';
+          const footer = document.createElement('div');
+          footer.className = 'wa-suggestion-footer';
+          footer.append(reason, applyBtn);
+          section.append(change, footer);
+          this.root.append(section);
+        }
+      };
+
+      appendIssues(state?.currentSentence ? [state.currentSentence] : []);
+      const paragraphIssues = state?.currentParagraphIssues
+        ?? (state?.currentParagraph ? [state.currentParagraph] : []);
+      const sentenceIssueId = state?.currentSentence?.issueId;
+      appendIssues(paragraphIssues.filter((issue) => issue.issueId !== sentenceIssueId));
     }
     this.renderSettingsDialog();
     this.renderErrorModal(state);
@@ -476,7 +575,11 @@ export class WritingAssistantPanel {
 
     const activation = document.createElement('select');
     activation.name = activation.dataset.field = 'activationMode';
-    activation.append(new Option('始终激活', 'always'), new Option('仅侧边栏打开时', 'panel_open'));
+    activation.append(
+      new Option('始终激活', 'always'),
+      new Option('仅侧边栏打开时', 'panel_open'),
+      new Option('关闭', 'off'),
+    );
     activation.value = this.settings.activationMode;
 
     const limit = document.createElement('input');
@@ -497,7 +600,7 @@ export class WritingAssistantPanel {
     const disableThinkingCheck = document.createElement('input');
     disableThinkingCheck.type = 'checkbox';
     disableThinkingCheck.name = disableThinkingCheck.dataset.field = 'disableThinking';
-    disableThinkingCheck.checked = this.settings.disableThinking ?? false;
+    disableThinkingCheck.checked = this.settings.disableThinking ?? true;
 
     const save = document.createElement('button');
     save.type = 'submit';
@@ -512,6 +615,9 @@ export class WritingAssistantPanel {
         activationMode: activation.value as WritingSettings['activationMode'],
         fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
         targetLanguage: targetLang.value as TargetLanguage,
+        replacementFontScale: this.settings.replacementFontScale,
+        replacementTextColor: this.settings.replacementTextColor,
+        replacementBackgroundColor: this.settings.replacementBackgroundColor,
         disableThinking: disableThinkingCheck.checked,
       };
       this.settings = next;
@@ -534,7 +640,14 @@ export class WritingAssistantPanel {
   }
 
   private renderSettingsDialog(): void {
-    if (!this.settingsOpen) return;
+    if (!this.settingsOpen) {
+      this.settingsDialog = undefined;
+      return;
+    }
+    if (this.settingsDialog) {
+      this.root.append(this.settingsDialog);
+      return;
+    }
     const dialog = document.createElement('section');
     dialog.dataset.writingSettings = 'true';
     dialog.setAttribute('role', 'dialog');
@@ -547,6 +660,7 @@ export class WritingAssistantPanel {
     heading.textContent = '配置';
     const close = this.button('关闭', () => {
       this.settingsOpen = false;
+      this.settingsDialog = undefined;
       this.render();
     });
     close.className = 'wa-settings-close';
@@ -575,7 +689,11 @@ export class WritingAssistantPanel {
     concurrency.value = String(this.settings.maxConcurrency);
     const activation = document.createElement('select');
     activation.name = activation.dataset.field = 'activationMode';
-    activation.append(new Option('始终激活', 'always'), new Option('仅侧边栏打开时', 'panel_open'));
+    activation.append(
+      new Option('始终激活', 'always'),
+      new Option('仅侧边栏打开时', 'panel_open'),
+      new Option('关闭', 'off'),
+    );
     activation.value = this.settings.activationMode;
     const limit = document.createElement('input');
     limit.type = 'number';
@@ -585,7 +703,26 @@ export class WritingAssistantPanel {
     const dialogDisableThinking = document.createElement('input');
     dialogDisableThinking.type = 'checkbox';
     dialogDisableThinking.name = dialogDisableThinking.dataset.field = 'disableThinking';
-    dialogDisableThinking.checked = this.settings.disableThinking ?? false;
+    dialogDisableThinking.checked = this.settings.disableThinking ?? true;
+    const replacementFontScale = document.createElement('input');
+    replacementFontScale.type = 'number';
+    replacementFontScale.name = replacementFontScale.dataset.field = 'replacementFontScale';
+    replacementFontScale.min = '0.25';
+    replacementFontScale.max = '2';
+    replacementFontScale.step = '0.05';
+    replacementFontScale.value = String(this.settings.replacementFontScale);
+    const replacementTextColorControl = this.colorField(
+      '修正文字颜色',
+      this.settings.replacementTextColor,
+      TEXT_COLOR_PRESETS,
+    );
+    replacementTextColorControl.input.name = replacementTextColorControl.input.dataset.field = 'replacementTextColor';
+    const replacementBackgroundColorControl = this.colorField(
+      '修正文字背景色',
+      this.settings.replacementBackgroundColor,
+      BACKGROUND_COLOR_PRESETS,
+    );
+    replacementBackgroundColorControl.input.name = replacementBackgroundColorControl.input.dataset.field = 'replacementBackgroundColor';
     const dialogConstrainedDecoding = document.createElement('input');
     dialogConstrainedDecoding.type = 'checkbox';
     dialogConstrainedDecoding.name = dialogConstrainedDecoding.dataset.field = 'constrainedDecoding';
@@ -601,12 +738,16 @@ export class WritingAssistantPanel {
         invocationStrategy: strategy.value as WritingSettings['invocationStrategy'],
         maxConcurrency: Math.max(1, Math.min(6, Number(concurrency.value) || 3)),
         activationMode: activation.value as WritingSettings['activationMode'],
-        fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
-        targetLanguage: dialogTargetLang.value as TargetLanguage,
-        disableThinking: dialogDisableThinking.checked,
+         fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
+         targetLanguage: dialogTargetLang.value as TargetLanguage,
+         replacementFontScale: Math.min(2, Math.max(0.25, Number(replacementFontScale.value) || 0.8)),
+         replacementTextColor: replacementTextColorControl.read(),
+         replacementBackgroundColor: replacementBackgroundColorControl.read(),
+         disableThinking: dialogDisableThinking.checked,
         constrainedDecoding: dialogConstrainedDecoding.checked,
       };
       this.settingsOpen = false;
+      this.settingsDialog = undefined;
       void this.persist(this.settings);
       this.render();
     });
@@ -615,12 +756,16 @@ export class WritingAssistantPanel {
       this.field('调用策略', strategy),
       this.field('最大并发', concurrency),
       this.field('全文字符上限', limit),
+      this.field('修正文字大小（相对）', replacementFontScale),
+      replacementTextColorControl.field,
+      replacementBackgroundColorControl.field,
       this.field('激活模式', activation),
       this.field('关闭思考模式', dialogDisableThinking),
       this.field('启用约束性解码', dialogConstrainedDecoding),
       save,
     );
     dialog.append(header, form);
+    this.settingsDialog = dialog;
     this.root.append(dialog);
   }
 
@@ -709,11 +854,20 @@ export class WritingAssistantPanel {
     if (code === 'NETWORK') {
       return '网络连接失败，无法连接到模型 API 端点，请检查网络或代理设置。';
     }
+    if (code === 'TIMEOUT') {
+      return '模型请求超过 30 秒仍未完成，已自动终止，避免检测一直卡住。';
+    }
+    if (code === 'INVALID_RESPONSE') {
+      return '模型返回的数据缺少必要字段或请求标识不匹配，已拒绝该结果，请重试。';
+    }
     if (code === 'RESPONSE_DECODE') {
       return '无法将 API 响应体解析为 JSON，服务端可能返回了非 JSON 内容（如 HTML 错误页）。';
     }
     if (code === 'EMPTY_RESPONSE') {
       return '模型返回了空响应内容，可能因上下文过长被截断或模型异常，请重试。';
+    }
+    if (code === 'MODEL_TRUNCATED') {
+      return '模型把输出预算耗尽在思考过程，尚未生成检测结果；可开启约束性解码或关闭思考模式。';
     }
     if (code === 'PARSE_ERROR' || code === 'INVALID_RESPONSE') {
       return '模型输出的 JSON 格式无效，无法解析。如已启用约束性解码，请确认模型支持该功能；否则可尝试更换模型或重试。';

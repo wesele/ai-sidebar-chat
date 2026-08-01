@@ -57,7 +57,7 @@ const translations = {
     timingMetrics: 'Timing metrics',
     alignment: 'Alignment',
     selectModel: 'Select model...',
-    thinkingToggle: 'DeepSeek Thinking (默认/关闭)',
+    thinkingToggle: 'Thinking mode (click to choose)',
     clear: 'Clear',
     inputPlaceholder: 'Enter message... (Shift+Enter for new line)',
     send: 'Send',
@@ -117,7 +117,7 @@ const translations = {
     newChat: '新聊天',
     apiConfig: 'API配置',
     selectModel: '选择模型...',
-    thinkingToggle: 'DeepSeek 思考参数 (默认/关闭)',
+    thinkingToggle: '思考模式（点击选择）',
     clear: '清空',
     inputPlaceholder: '输入消息... (Shift+Enter 换行)',
     send: '发送',
@@ -180,7 +180,7 @@ const translations = {
     timingMetrics: 'Métricas de tiempo',
     alignment: 'Alineación',
     selectModel: 'Seleccionar modelo...',
-    thinkingToggle: 'Pensamiento DeepSeek (Default/Apagado)',
+    thinkingToggle: 'Modo de pensamiento (haz clic para elegir)',
     clear: 'Limpiar',
     inputPlaceholder: 'Escribe un mensaje... (Shift+Enter para nueva línea)',
     send: 'Enviar',
@@ -371,7 +371,31 @@ let allAvailableModels = []; // Store all fetched models for filtering
 let abortController = null;
 let isGenerating = false;
 let sendCount = 0;
-let thinkingMode = 'default'; // Two modes: 'default', 'off'
+let thinkingMode = 'default';
+
+const THINKING_MODE_LABELS = {
+  'zh-CN': {
+    default: '默认',
+    'openai-off': '关OpenAI',
+    'deepseek-off': '关DeepSeek',
+    'gemini-off': '关Gemini',
+    'nvidia-off': '关NVIDIA'
+  },
+  en: {
+    default: 'Default',
+    'openai-off': 'OpenAI off',
+    'deepseek-off': 'DeepSeek off',
+    'gemini-off': 'Gemini off',
+    'nvidia-off': 'NVIDIA off'
+  },
+  es: {
+    default: 'Predeterminado',
+    'openai-off': 'OpenAI apagado',
+    'deepseek-off': 'DeepSeek apagado',
+    'gemini-off': 'Gemini apagado',
+    'nvidia-off': 'NVIDIA apagado'
+  }
+};
 let showStats = true;
 let messageAlign = 'left-right'; // 'left-right' or 'both-left'
 
@@ -397,6 +421,7 @@ const els = {
   micBtn: document.getElementById('mic-btn'),
   modelSelect: document.getElementById('model-select'),
   thinkingToggleBtn: document.getElementById('thinking-toggle-btn'),
+  thinkingMenu: document.getElementById('thinking-menu'),
   statsToggleBtn: document.getElementById('stats-toggle-btn'),
   alignToggleBtn: document.getElementById('align-toggle-btn'),
   moreBtn: document.getElementById('more-btn'),
@@ -628,18 +653,41 @@ function updateMessageAlignment() {
   els.chatContainer.classList.toggle('both-left', messageAlign === 'both-left');
 }
 
-function toggleThinking() {
-  thinkingMode = thinkingMode === 'default' ? 'off' : 'default';
+function thinkingModeLabel(mode) {
+  return THINKING_MODE_LABELS[currentLang]?.[mode] || THINKING_MODE_LABELS.en[mode] || mode;
+}
+
+function closeThinkingMenu() {
+  if (!els.thinkingMenu || !els.thinkingToggleBtn) return;
+  els.thinkingMenu.classList.add('hidden');
+  els.thinkingToggleBtn.setAttribute('aria-expanded', 'false');
+}
+
+function selectThinkingMode(mode) {
+  const option = els.thinkingMenu?.querySelector(`[data-thinking-mode="${mode}"]`);
+  if (!option) return;
+  thinkingMode = mode;
   updateThinkingButton();
+  closeThinkingMenu();
 }
 
 function updateThinkingButton() {
   if (!els.thinkingToggleBtn) return;
-  const labels = { default: '默认', off: '关' };
-  els.thinkingToggleBtn.textContent = labels[thinkingMode] || '默认';
+  els.thinkingToggleBtn.textContent = thinkingModeLabel(thinkingMode);
   els.thinkingToggleBtn.className = 'toggle-btn';
-  if (thinkingMode !== 'default') {
-    els.thinkingToggleBtn.classList.add(thinkingMode);
+  if (thinkingMode === 'default') {
+    els.thinkingToggleBtn.classList.add('default');
+  } else {
+    els.thinkingToggleBtn.classList.add('off');
+  }
+  els.thinkingToggleBtn.dataset.thinkingMode = thinkingMode;
+
+  if (els.thinkingMenu) {
+    els.thinkingMenu.querySelectorAll('[data-thinking-mode]').forEach((item) => {
+      const mode = item.getAttribute('data-thinking-mode');
+      item.textContent = thinkingModeLabel(mode);
+      item.setAttribute('aria-checked', String(mode === thinkingMode));
+    });
   }
 }
 
@@ -958,6 +1006,61 @@ async function sendMessage() {
   }
 }
 
+function getOpenAIThinkingOffEffort(modelId) {
+    const id = String(modelId || '').toLowerCase();
+
+    // GPT-5.1 and later support the true no-reasoning value. Older reasoning
+    // models use their lowest supported effort instead.
+    if (/^gpt-5\.[1-9]\d*(?:[-.]|$)/.test(id)) return 'none';
+    if (/^gpt-5-pro(?:[-.]|$)/.test(id)) return 'high';
+    if (/^gpt-5(?:[-.]|$)/.test(id)) return 'minimal';
+    if (/^o[134](?:[-.]|$)/.test(id)) return 'low';
+
+    // Non-reasoning OpenAI models already have no reasoning phase. Omitting
+    // the parameter also keeps classic chat models and compatible endpoints
+    // from rejecting an unsupported reasoning_effort field.
+    return null;
+}
+
+function getGeminiThinkingConfig(modelId) {
+    const id = String(modelId || '').toLowerCase();
+
+    // Gemini 3 uses thinkingLevel. Pro models do not support "minimal", so
+    // low is their lowest supported level.
+    if (/^gemini-3(?:\.|-|$)/.test(id)) {
+        return { thinkingLevel: id.includes('pro') ? 'low' : 'minimal' };
+    }
+
+    // Gemini 2.5 Pro cannot disable thinking; 128 is its minimum budget.
+    if (/^gemini-2\.5(?:\.|-|$)/.test(id)) {
+        return id.includes('pro') ? { thinkingBudget: 128 } : { thinkingBudget: 0 };
+    }
+
+    // Keep the established Gemini REST shape for older/compatible models.
+    return { thinkingBudget: 0 };
+}
+
+function applyOpenAIThinkingMode(body, modelId) {
+    if (thinkingMode === 'openai-off') {
+        delete body.thinking;
+        delete body.chat_template_kwargs;
+        const effort = getOpenAIThinkingOffEffort(modelId);
+        if (effort) body.reasoning_effort = effort;
+        else delete body.reasoning_effort;
+    } else if (thinkingMode === 'deepseek-off') {
+        delete body.reasoning_effort;
+        delete body.chat_template_kwargs;
+        body.thinking = { type: 'disabled' };
+    } else if (thinkingMode === 'nvidia-off') {
+        delete body.reasoning_effort;
+        delete body.thinking;
+        body.chat_template_kwargs = {
+            ...(body.chat_template_kwargs && typeof body.chat_template_kwargs === 'object' ? body.chat_template_kwargs : {}),
+            enable_thinking: false
+        };
+    }
+}
+
 async function streamCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
     const apiType = provider.apiType || 'openai';
     
@@ -985,11 +1088,9 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
         body.reasoning_effort = settings.reasoningEffort;
     }
     
-    // Handle thinking parameter: default=no param, off=explicitly disable (DeepSeek)
-    if (thinkingMode === 'off') {
-        body.thinking = { type: "disabled" };
-    }
-    // default: no parameter (let API decide)
+    // Default leaves the API/model in control. Vendor-specific modes apply
+    // their native OpenAI-compatible request parameters.
+    applyOpenAIThinkingMode(body, modelId);
 
     const response = await fetch(url, {
         method: 'POST',
@@ -1110,16 +1211,18 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
         body.tools = [{ google_search: {} }];
     }
 
-    // Handle thinking parameter based on the toggle
-    // Note: includeThoughts works on Gemini 2.5/3 models
-    // 'off' and 'default' both omit the param to avoid errors on models that don't support thinkingConfig
-    if (thinkingMode === 'on') {
-        body.thinkingConfig = { includeThoughts: true };
-    }
-    // 'off' / 'default' = no param (let API decide)
-
     // Merge custom params (allow overriding generationConfig etc.)
     Object.assign(body, customParams);
+
+    // Gemini's thinkingConfig belongs inside generationConfig. Default leaves
+    // custom parameters untouched; the explicit Gemini mode wins over them.
+    if (thinkingMode === 'gemini-off') {
+        delete body.reasoning_effort;
+        if (!body.generationConfig || typeof body.generationConfig !== 'object') {
+            body.generationConfig = {};
+        }
+        body.generationConfig.thinkingConfig = getGeminiThinkingConfig(modelId);
+    }
 
     const response = await fetch(url, {
         method: 'POST',
@@ -1597,7 +1700,20 @@ els.chatInput.addEventListener('keydown', (e) => {
     });
     
     els.modelSelect.addEventListener('change', updateCurrentContextModel);
-    els.thinkingToggleBtn.addEventListener('click', toggleThinking);
+    els.thinkingToggleBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const isHidden = els.thinkingMenu.classList.contains('hidden');
+        els.thinkingMenu.classList.toggle('hidden', !isHidden);
+        els.thinkingToggleBtn.setAttribute('aria-expanded', String(isHidden));
+    });
+    els.thinkingMenu.querySelectorAll('[data-thinking-mode]').forEach((item) => {
+        item.addEventListener('click', () => selectThinkingMode(item.getAttribute('data-thinking-mode')));
+    });
+    document.addEventListener('click', (event) => {
+        if (!els.thinkingMenu.contains(event.target) && event.target !== els.thinkingToggleBtn) {
+            closeThinkingMenu();
+        }
+    });
     els.statsToggleBtn.addEventListener('click', toggleStats);
     els.alignToggleBtn.addEventListener('click', toggleMessageAlign);
     els.configBtn.addEventListener('click', openApiModal);

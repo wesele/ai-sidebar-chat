@@ -66,7 +66,10 @@ function overlap(a: DraftRange, b: DraftRange): number {
  * Remaining changed units inherit the best overlapping (or same-position)
  * identity, which lets their unchanged children retain their own identities.
  */
-function matchOneToOne<T extends DraftRange>(oldUnits: T[], drafts: DraftRange[]): Array<T | undefined> {
+function matchOneToOne<T extends DraftRange>(oldUnits: T[], drafts: DraftRange[]): {
+  matches: Array<T | undefined>;
+  orphaned: T[];
+} {
   const matches: Array<T | undefined> = Array.from({ length: drafts.length });
   const used = new Set<number>();
 
@@ -119,7 +122,10 @@ function matchOneToOne<T extends DraftRange>(oldUnits: T[], drafts: DraftRange[]
     }
   }
 
-  return matches;
+  return {
+    matches,
+    orphaned: oldUnits.filter((_, index) => !used.has(index)),
+  };
 }
 
 function updateIssueOffset(issue: Issue, delta: number): Issue {
@@ -142,7 +148,7 @@ function updateSentences(
     const end = paragraph.start + local.end;
     return { start, end, textHash: hash(paragraphText.slice(local.start, local.end)) };
   });
-  const matches = matchOneToOne(oldSentences, drafts);
+  const { matches } = matchOneToOne(oldSentences, drafts);
 
   return drafts.map((draft, index) => {
     const previous = matches[index];
@@ -236,12 +242,20 @@ export function createOrUpdateCache(
     textHash: hash(text.slice(range.start, range.end)),
   }));
   const oldParagraphs = previous?.paragraphs ?? [];
-  const matches = matchOneToOne(oldParagraphs, paragraphDrafts);
+  const { matches, orphaned } = matchOneToOne(oldParagraphs, paragraphDrafts);
 
   const paragraphs = paragraphDrafts.map((draft, index): ParagraphCache => {
     const previousParagraph = matches[index];
     const paragraphText = text.slice(draft.start, draft.end);
-    const sentences = updateSentences(previousParagraph?.sentences ?? [], draft, paragraphText, appliedReplacements);
+    const absorbedSentences = orphaned
+      .filter((old) => overlap(old, draft) > 0)
+      .flatMap((old) => old.sentences);
+    const sentences = updateSentences(
+      [...(previousParagraph?.sentences ?? []), ...absorbedSentences],
+      draft,
+      paragraphText,
+      appliedReplacements,
+    );
     if (!previousParagraph) {
       return {
         id: id('p'),

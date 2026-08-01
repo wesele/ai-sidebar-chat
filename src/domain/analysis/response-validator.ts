@@ -29,6 +29,28 @@ const plainText = (value: unknown, max = 600): value is string =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
+/**
+ * Reasoning models often miscount UTF-16 offsets for CJK/full-width spans, so
+ * a reported range frequently does not slice to `original` even though the
+ * span itself is correct. Locate `original` in the unit text instead, picking
+ * the occurrence closest to the reported start. Returns undefined when the
+ * original is hallucinated (not present in the text), which stays a rejection.
+ */
+function findSpan(text: string, original: string, preferredStart: number): { start: number; end: number } | undefined {
+  let best: { start: number; end: number } | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let index = text.indexOf(original);
+  while (index !== -1) {
+    const distance = Math.abs(index - preferredStart);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = { start: index, end: index + original.length };
+    }
+    index = text.indexOf(original, index + 1);
+  }
+  return best;
+}
+
 export function validateResponse(
   response: unknown,
   expected: { requestId: string; documentRevision: number; units: ExpectedUnit[] },
@@ -48,8 +70,11 @@ export function validateResponse(
       rejected.push('unit');
       continue;
     }
-    const unit = expected.units.find((candidate) =>
-      candidate.id === rawUnit.unitId && candidate.revision === rawUnit.unitRevision);
+    const unit = expected.units.find((candidate) => candidate.id === rawUnit.unitId);
+    // Units are matched by id only: reasoning models routinely echo the
+    // schema-example revision (1) instead of the requested unitRevision, and
+    // staleness is already enforced at the request level (requestId +
+    // pending/cache revision) in the session.
     if (!unit || !Array.isArray(rawUnit.issues)) {
       rejected.push(typeof rawUnit.unitId === 'string' ? rawUnit.unitId : 'unit');
       continue;
@@ -57,67 +82,104 @@ export function validateResponse(
 
     const issues: Issue[] = [];
     const localRanges: Array<{ start: number; end: number }> = [];
-    let invalid = false;
     for (const rawIssue of rawUnit.issues) {
-      if (!isRecord(rawIssue)) {
-        invalid = true;
-        break;
-      }
-      const { start, end, scope } = rawIssue;
+      if (!isRecord(rawIssue)) continue;
+      const { scope } = rawIssue;
+      const rawStart = rawIssue.start;
+      const rawEnd = rawIssue.end;
+      const category = typeof rawIssue.category === 'string' && categories.has(rawIssue.category)
+        ? rawIssue.category
+        : 'other';
       if (
         !scopes.has(scope as string) ||
         !severities.has(rawIssue.severity as string) ||
-        !categories.has(rawIssue.category as string) ||
-        !Number.isInteger(start) ||
-        !Number.isInteger(end) ||
-        (start as number) < 0 ||
-        (end as number) <= (start as number) ||
-        (end as number) > unit.text.length ||
         !plainText(rawIssue.original) ||
         !plainText(rawIssue.replacement) ||
         !plainText(rawIssue.reason) ||
-        rawIssue.original !== unit.text.slice(start as number, end as number) ||
         rawIssue.original === rawIssue.replacement ||
-        (unit.type === 'paragraph' ? scope !== 'paragraph' : scope === 'paragraph') ||
-        (scope === unit.type && ((start as number) !== 0 || (end as number) !== unit.text.length))
-      ) {
-        invalid = true;
-        break;
+        (unit.type === 'paragraph' ? scope !== 'paragraph' : scope === 'paragraph')
+      ) continue;
+
+      // Repair model-miscounted UTF-16 offsets before validating. Sentence/
+      // paragraph scope must span the whole unit; local scope is re-located in
+      // the unit text. A sentence-scope finding that only covers an embedded
+      // non-English clause is downgraded to a local issue. Unrepairable
+      // (hallucinated) originals are isolated and dropped.
+      let start: number;
+      let end: number;
+      let effectiveScope = scope as string;
+      const exact =
+        Number.isInteger(rawStart) &&
+        Number.isInteger(rawEnd) &&
+        (rawStart as number) >= 0 &&
+        (rawEnd as number) <= unit.text.length &&
+        rawIssue.original === unit.text.slice(rawStart as number, rawEnd as number);
+      if (exact) {
+        start = rawStart as number;
+        end = rawEnd as number;
+      } else if (scope === unit.type) {
+        if (rawIssue.original === unit.text) {
+          start = 0;
+          end = unit.text.length;
+        } else if (unit.type === 'sentence') {
+          const found = findSpan(unit.text, rawIssue.original, Number.isInteger(rawStart) ? (rawStart as number) : -1);
+          if (!found) continue;
+          start = found.start;
+          end = found.end;
+          effectiveScope = 'local';
+        } else {
+          continue;
+        }
+      } else {
+        const found = findSpan(unit.text, rawIssue.original, Number.isInteger(rawStart) ? (rawStart as number) : -1);
+        if (!found) continue;
+        start = found.start;
+        end = found.end;
       }
 
-      if (scope === 'local') {
+      if (start < 0 || end <= start || end > unit.text.length) continue;
+
+      if (effectiveScope === 'local') {
         const wordCount = (rawIssue.original as string).trim().split(/\s+/).length;
-        const range = { start: start as number, end: end as number };
+        const range = { start, end };
         if (
           wordCount > 4 ||
           overlapsProtected(range, protectedSpans(unit.text)) ||
           localRanges.some((other) => range.start < other.end && other.start < range.end)
-        ) {
-          invalid = true;
-          break;
-        }
+        ) continue;
         localRanges.push(range);
       }
 
       issues.push({
         issueId: `${unit.id}:${unit.revision}:${issues.length}`,
-        scope: scope as Issue['scope'],
+        scope: effectiveScope as Issue['scope'],
         severity: rawIssue.severity as Issue['severity'],
-        start: start as number,
-        end: end as number,
+        start,
+        end,
         original: rawIssue.original,
         replacement: rawIssue.replacement,
         reason: rawIssue.reason,
-        category: rawIssue.category as Issue['category'],
+        category: category as Issue['category'],
       });
     }
 
-    if (
-      invalid ||
-      issues.filter((issue) => issue.scope === 'sentence').length > 1 ||
-      issues.filter((issue) => issue.scope === 'paragraph').length > 1
-    ) rejected.push(unit.id);
-    else valid.push({ unitId: unit.id, issues });
+    // Per Spec 7.5, invalid single items are isolated and dropped. A unit that
+    // yields no valid issues is accepted as "analyzed, no findings" rather
+    // than rejected: paragraph units routinely echo sentence-level findings
+    // with "local" scope (which belong to the sentence analysis), and clean
+    // sentences can yield no-op issues, so rejecting those units would surface
+    // a spurious document-level failure. Only the first full-range
+    // sentence/paragraph rewrite is kept per unit.
+    const firstSentence = issues.find((issue) => issue.scope === 'sentence');
+    const firstParagraph = issues.find((issue) => issue.scope === 'paragraph');
+    const kept = issues.filter(
+      (issue) =>
+        issue.scope !== 'sentence' || issue === firstSentence,
+    ).filter(
+      (issue) =>
+        issue.scope !== 'paragraph' || issue === firstParagraph,
+    );
+    valid.push({ unitId: unit.id, issues: kept });
   }
   return { valid, rejected };
 }

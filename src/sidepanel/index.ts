@@ -14,6 +14,12 @@ function init(): void {
   if (!writing || !tools) return;
   const pendingBatch = new Map<string, { tabId: number; editorId: string; revision: number }>();
   const completedBatch = new Map<number, Extract<RuntimeMessage, { type: 'APPLY_RESULT' }>['payload']>();
+  const notifyPanelConnection = (open: boolean): void => send({
+    v: 1,
+    type: 'PANEL_CONNECTION_CHANGED',
+    correlationId: crypto.randomUUID(),
+    payload: { open },
+  });
   const panel = new WritingAssistantPanel(
     writing,
     async (settings) => {
@@ -24,6 +30,8 @@ function init(): void {
         correlationId: crypto.randomUUID(),
         payload: settings,
       });
+      // The panel may have opened before the content script received the new mode.
+      notifyPanelConnection(true);
     },
     (type, payload) => {
       if (type === 'RETRY_DETECTION' || type === 'REQUEST_FULL_ANALYSIS') {
@@ -109,20 +117,19 @@ function init(): void {
       }
     }
   });
-  runtime.tabs.onActivated?.((tabId) => panel.clearState(tabId));
-  send({ v: 1, type: 'PROVIDERS_REQUEST', correlationId: crypto.randomUUID(), payload: {} });
-  send({
-    v: 1,
-    type: 'PANEL_CONNECTION_CHANGED',
-    correlationId: crypto.randomUUID(),
-    payload: { open: true },
+  runtime.tabs.onActivated?.((tabId) => {
+    panel.clearState(tabId);
+    notifyPanelConnection(true);
   });
-  window.addEventListener('pagehide', () => send({
-    v: 1,
-    type: 'PANEL_CONNECTION_CHANGED',
-    correlationId: crypto.randomUUID(),
-    payload: { open: false },
-  }));
+  send({ v: 1, type: 'PROVIDERS_REQUEST', correlationId: crypto.randomUUID(), payload: {} });
+  notifyPanelConnection(true);
+  const reannouncePanel = (): void => notifyPanelConnection(true);
+  window.addEventListener('focus', reannouncePanel);
+  window.addEventListener('pageshow', reannouncePanel);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reannouncePanel();
+  });
+  window.addEventListener('pagehide', () => notifyPanelConnection(false));
 }
 
 if (document.readyState === 'loading') {

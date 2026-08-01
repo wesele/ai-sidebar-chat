@@ -245,12 +245,14 @@ describe('Spec.md Error Categories and Simulation Tests', () => {
       units: [{ id: 'unit-prot-1', revision: 1, type: 'sentence', text: textWithProtected }],
     });
 
-    expect(validation.valid).toHaveLength(0);
-    expect(validation.rejected).toContain('unit-prot-1');
+    // The URL issue is isolated and dropped; the unit is analyzed with no findings.
+    expect(validation.rejected).not.toContain('unit-prot-1');
+    expect(validation.valid).toHaveLength(1);
+    expect(validation.valid[0].issues).toEqual([]);
   });
 
   // 6. Schema Violation Isolations
-  it('rejects invalid issues with bad offsets, HTML tags in reasons, or identical replacement', () => {
+  it('isolates invalid issues with bad offsets, HTML tags in reasons, or identical replacement', () => {
     const text = 'This is a test sentence.';
     const badResponse = {
       schemaVersion: '1',
@@ -301,8 +303,11 @@ describe('Spec.md Error Categories and Simulation Tests', () => {
       ],
     });
 
-    expect(val.valid).toHaveLength(0);
-    expect(val.rejected).toEqual(['unit-bad-1', 'unit-bad-2']);
+    // Both invalid issues are isolated; each unit is analyzed with no findings.
+    expect(val.rejected).toEqual([]);
+    expect(val.valid).toHaveLength(2);
+    expect(val.valid[0].issues).toEqual([]);
+    expect(val.valid[1].issues).toEqual([]);
   });
 
   // 7. Full Document Analysis Response Validation

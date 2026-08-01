@@ -17,7 +17,7 @@ describe('WritingSession races', () => {
       replaceRanges: () => ({ applied: 0, skipped: 0 }),
       observe: (cb: () => void) => { (adapter as { input?: () => void }).input = cb; return () => undefined; },
     } as unknown as EditorAdapter & { input?: () => void };
-    const session = new WritingSession(adapter, r => requests.push(r), () => undefined, id => cancelled.push(id), () => undefined, () => ({ hasModel: true, fullDocumentCharacterLimit: 20000 }));
+    const session = new WritingSession(adapter, r => requests.push(r), () => undefined, id => cancelled.push(id), () => undefined, () => ({ hasModel: true, fullDocumentCharacterLimit: 20000, targetLanguage: 'EN' }));
     session.start();
     vi.advanceTimersByTime(1500);
     expect(requests).toHaveLength(1);
@@ -56,7 +56,7 @@ describe('WritingSession races', () => {
       (id) => fullRequests.push({ requestId: id }),
       () => undefined,
       () => undefined,
-      () => ({ hasModel: true, fullDocumentCharacterLimit: 20000 }),
+      () => ({ hasModel: true, fullDocumentCharacterLimit: 20000, targetLanguage: 'EN' }),
     );
 
     session.start();
@@ -121,7 +121,7 @@ describe('WritingSession races', () => {
       (id) => fullRequests.push({ requestId: id }),
       () => undefined,
       () => undefined,
-      () => ({ hasModel: true, fullDocumentCharacterLimit: 20000 }),
+      () => ({ hasModel: true, fullDocumentCharacterLimit: 20000, targetLanguage: 'EN' }),
     );
 
     session.start();

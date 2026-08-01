@@ -29,7 +29,7 @@ function sessionFor(text: string, caret: number, requests: AnalysisRequest[]): W
     () => undefined,
     () => undefined,
     () => undefined,
-    () => ({ hasModel: true, fullDocumentCharacterLimit: 20_000 }),
+    () => ({ hasModel: true, fullDocumentCharacterLimit: 20_000, targetLanguage: 'EN' }),
   );
 }
 

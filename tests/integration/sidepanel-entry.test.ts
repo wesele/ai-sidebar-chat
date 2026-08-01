@@ -130,4 +130,13 @@ describe('side-panel tab and batch correlation binding', () => {
     await vi.waitFor(() => expect(document.querySelector('[data-apply-result]')?.textContent)
       .toContain('已应用 1 项'));
   });
+
+  it('reconnects the writing assistant when the active tab changes', () => {
+    sent.length = 0;
+    activated?.(22);
+    expect(sent.at(-1)).toMatchObject({
+      type: 'PANEL_CONNECTION_CHANGED',
+      payload: { open: true },
+    });
+  });
 });

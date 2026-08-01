@@ -31,8 +31,9 @@ describe('writing side panel', () => {
     const command = vi.fn();
     const panel = new WritingAssistantPanel(root, vi.fn(async () => undefined), command);
     panel.setState(state, 7);
-    expect(root.textContent?.indexOf('当前句子')).toBeLessThan(root.textContent!.indexOf('当前段落'));
-    const apply = Array.from(root.querySelectorAll('button')).find((button) => button.textContent === '应用修改')!;
+    expect(root.textContent).not.toContain('当前句子');
+    expect(root.textContent).not.toContain('当前段落');
+    const apply = Array.from(root.querySelectorAll('button')).find((button) => button.textContent === '应用')!;
     apply.click();
     expect(command).toHaveBeenCalledWith('APPLY_ISSUE', {
       tabId: 7, editorId: 'e', revision: 1, issueId: 's',
@@ -41,6 +42,27 @@ describe('writing side panel', () => {
     expect(fullBtn).not.toBeUndefined();
     fullBtn.click();
     expect(root.querySelector('.wa-full-card')?.textContent).toContain('Global issue');
+  });
+
+  it('shows all issues in the current paragraph without duplicating the sentence issue', () => {
+    const root = document.createElement('div');
+    const panel = new WritingAssistantPanel(root, vi.fn(async () => undefined), vi.fn());
+    panel.setState({
+      ...state,
+      currentParagraphIssues: [
+        state.currentParagraph,
+        { issueId: 'l', original: 'bad local', replacement: 'good local', reason: 'local reason' },
+        state.currentSentence,
+      ],
+    }, 7);
+
+    const sections = Array.from(root.querySelectorAll<HTMLElement>('.wa-section'));
+    expect(sections).toHaveLength(3);
+    expect(root.textContent).not.toContain('当前句子');
+    expect(root.textContent).not.toContain('当前段落');
+    expect(sections.every((section) => section.querySelector('.wa-suggestion-footer'))).toBe(true);
+    expect(root.textContent).toContain('bad local → good local');
+    expect(root.textContent).not.toContain('bad sentence → good sentence\nbad sentence → good sentence');
   });
 
   it('hides section box when paragraph or sentence has no issue', () => {
@@ -111,17 +133,70 @@ describe('writing side panel', () => {
     panel.setSettings({
       providerId: 'p', modelId: 'm', invocationStrategy: 'parallel', maxConcurrency: 5,
       activationMode: 'panel_open', fullDocumentCharacterLimit: 1234,
+      replacementFontScale: 0.7, replacementTextColor: '#123456', replacementBackgroundColor: '#abcdef',
     });
     expect(root.querySelector('h2')).toBeNull();
     expect(root.querySelector('.wa-model-select')).not.toBeNull();
     root.querySelector<HTMLButtonElement>('[data-writing-settings-button]')!.click();
     expect(root.querySelector('[data-writing-settings] select[data-field="modelId"]')).toBeNull();
+    expect(Array.from(root.querySelectorAll('[data-writing-settings] select[data-field="activationMode"] option'))
+      .map((option) => option.textContent)).toContain('关闭');
+    expect(root.querySelector<HTMLInputElement>('[data-writing-settings] input[data-field="replacementFontScale"]')?.value).toBe('0.7');
+    expect(root.querySelector<HTMLInputElement>('[data-writing-settings] input[data-field="replacementTextColor"]')?.value).toBe('#123456');
+    expect(root.querySelector<HTMLInputElement>('[data-writing-settings] input[data-field="replacementBackgroundColor"]')?.value).toBe('#abcdef');
     root.querySelector('[data-writing-settings] form')!
       .dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
     expect(persist).toHaveBeenCalledWith({
       providerId: 'p', modelId: 'm', invocationStrategy: 'parallel', maxConcurrency: 5,
-      activationMode: 'panel_open', fullDocumentCharacterLimit: 1234, targetLanguage: 'EN',
+       activationMode: 'panel_open', fullDocumentCharacterLimit: 1234, targetLanguage: 'EN',
+       replacementFontScale: 0.7, replacementTextColor: '#123456', replacementBackgroundColor: '#abcdef',
+       disableThinking: true, constrainedDecoding: false,
     });
+  });
+
+  it('renders built-in color presets and persists transparent background preset', () => {
+    const root = document.createElement('div');
+    const persist = vi.fn(async () => undefined);
+    const panel = new WritingAssistantPanel(root, persist, vi.fn());
+    panel.setProviders([{ id: 'p', name: 'Provider', models: ['m'] }]);
+    panel.setSettings({
+      providerId: 'p', modelId: 'm', invocationStrategy: 'batch', maxConcurrency: 3,
+      activationMode: 'always', fullDocumentCharacterLimit: 20000,
+      replacementFontScale: 0.8, replacementTextColor: '#b85000', replacementBackgroundColor: '#fff3e6',
+    });
+    root.querySelector<HTMLButtonElement>('[data-writing-settings-button]')!.click();
+    const settings = root.querySelector('[data-writing-settings]');
+    const swatches = settings?.querySelectorAll('.wa-color-field .wa-color-swatch');
+    expect(swatches?.length).toBe(16);
+    const backgroundSwatches = settings?.querySelectorAll('.wa-color-field:nth-of-type(2) .wa-color-swatch');
+    expect(backgroundSwatches?.length).toBe(8);
+    expect(backgroundSwatches?.item(7).classList.contains('wa-color-swatch-transparent')).toBe(true);
+    backgroundSwatches?.item(7).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    settings!.querySelector('form')!.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ replacementBackgroundColor: 'transparent' }));
+  });
+
+  it('keeps unsaved color selection when the panel re-renders', () => {
+    const root = document.createElement('div');
+    const panel = new WritingAssistantPanel(root, vi.fn(async () => undefined), vi.fn());
+    panel.setProviders([{ id: 'p', name: 'Provider', models: ['m'] }]);
+    panel.setSettings({
+      providerId: 'p', modelId: 'm', invocationStrategy: 'batch', maxConcurrency: 3,
+      activationMode: 'always', fullDocumentCharacterLimit: 20000,
+      replacementFontScale: 0.8, replacementTextColor: '#b85000', replacementBackgroundColor: '#fff3e6',
+    });
+    root.querySelector<HTMLButtonElement>('[data-writing-settings-button]')!.click();
+    const textSwatch = root.querySelector<HTMLButtonElement>('[data-writing-settings] .wa-color-field:nth-of-type(1) .wa-color-swatch:nth-of-type(3)');
+    textSwatch?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(root.querySelector<HTMLInputElement>('[data-writing-settings] input[data-field="replacementTextColor"]')?.value).toBe('#b91c1c');
+    panel.setState({
+      editorId: 'e', revision: 1, status: 'analyzed', counts: {},
+      currentSentence: { issueId: 's', original: 'a', replacement: 'b', reason: 'grammar' },
+    }, 7);
+    const input = root.querySelector<HTMLInputElement>('[data-writing-settings] input[data-field="replacementTextColor"]');
+    expect(input).not.toBeNull();
+    expect(input?.value).toBe('#b91c1c');
+    expect(root.querySelector('[data-writing-settings] form')!.querySelector('.wa-color-swatch.active')).not.toBeNull();
   });
 
   it('shows clickable failure status, opens error reason modal, and triggers retry command', () => {
@@ -148,9 +223,10 @@ describe('writing side panel', () => {
     retryBtn?.click();
     expect(command).toHaveBeenCalledWith('RETRY_DETECTION', { tabId: 7 });
 
-    // Click error text to open modal
+    // Click error text to open modal (the modal lives on document.body so it
+    // can be position:fixed over the panel)
     errorText?.click();
-    const modal = root.querySelector<HTMLElement>('[data-writing-error-modal="true"]');
+    const modal = document.body.querySelector<HTMLElement>('[data-writing-error-modal="true"]');
     expect(modal).not.toBeNull();
     expect(modal?.textContent).toContain('检测失败原因');
     expect(modal?.textContent).toContain('API Key 无效或未授权 (HTTP 401)');
@@ -161,7 +237,7 @@ describe('writing side panel', () => {
     expect(modalRetryBtn).not.toBeUndefined();
     modalRetryBtn?.click();
     expect(command).toHaveBeenCalledTimes(2);
-    expect(root.querySelector('[data-writing-error-modal="true"]')).toBeNull();
+    expect(document.body.querySelector('[data-writing-error-modal="true"]')).toBeNull();
   });
 
   it('renders grey 全文 button when untriggered and sends REQUEST_FULL_ANALYSIS command on click', () => {
@@ -181,6 +257,16 @@ describe('writing side panel', () => {
 
     fullBtn.click();
     expect(command).toHaveBeenCalledWith('REQUEST_FULL_ANALYSIS', { tabId: 7 });
+    // Content script reports the in-flight full-document review
+    panel.setState({
+      editorId: 'e',
+      revision: 1,
+      status: 'analyzed',
+      counts: { sentence: 1 },
+      fullAnalysisPending: true,
+    }, 7);
+    expect(root.querySelector('.wa-full-card')?.textContent).toContain('正在评审…');
+    expect(root.querySelector('.wa-full-card')?.textContent).not.toContain('暂无全文建议');
   });
 
   it('renders writing language selector with EN, ES, CN options and config icon button', () => {
