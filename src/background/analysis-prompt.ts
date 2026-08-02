@@ -45,14 +45,14 @@ export function fullAnalysisPrompt(request: FullDocumentRequest, uiLanguage?: st
   const targetLangName = getTargetLanguageName(request.targetLanguage);
   const returnInstruction = useTool
     ? `Return one JSON object matching the constrained schema using the same requestId and documentRevision.`
-    : `Return JSON only: {"schemaVersion":"1","requestId":"...","documentRevision":1,"severity":"none|improvement|problem","summary":"one short sentence","suggestions":[{"severity":"improvement|problem","title":"short actionable recommendation","reason":"brief impact or change needed"}]} using the same requestId and documentRevision. All fields must be concise plain text.`;
+    : `Return JSON only: {"schemaVersion":"1","requestId":"...","documentRevision":1,"severity":"none|improvement|problem","summary":"one short sentence or empty when severity is none","suggestions":[{"severity":"improvement|problem","title":"short actionable recommendation","reason":"brief impact or change needed"}]} using the same requestId and documentRevision. All fields must be concise plain text.`;
   return `Review this ${targetLangName} document at the macro level only. Return only important, actionable suggestions. Focus exclusively on:
 1. Writing intent — is the overall purpose of the document clear and consistent?
 2. Overall fluency — does the text read naturally as a whole (not sentence-by-sentence grammar)?
 3. Logical coherence — do the ideas flow logically? Are there structural contradictions or missing transitions between major sections?
 
 Do NOT flag: grammar errors, spelling, word choice, punctuation, repetition of phrases, or any issue that can be caught at the sentence level. Do not return rewritten document text.
-Do not give general praise, a score, or an explanation merely to justify the evaluation. If there is no significant document-level problem, return severity "none" with an empty suggestions array. Return at most 3 suggestions, ranked by importance. Each suggestion must be a concrete recommendation that materially improves the document; omit minor or subjective preferences. Keep each title short and actionable. Keep each reason to one short sentence explaining the impact or the needed change, not repeating the evaluation. Write all summaries, suggestion titles, and reasons in ${langName}.
+Do not give general praise, a score, or an explanation merely to justify the evaluation. If there is no significant document-level problem, return severity "none" with an empty summary and suggestions array. Return at most 3 suggestions, ranked by importance. Each suggestion must be a concrete recommendation that materially improves the document; omit minor or subjective preferences. Keep each title short and actionable. Keep each reason to one short sentence explaining the impact or the needed change, not repeating the evaluation. Write all summaries, suggestion titles, and reasons in ${langName}.
 ${returnInstruction}
 Copy schemaVersion, requestId, and documentRevision exactly from REQUEST; they are not example values.
 REQUEST:

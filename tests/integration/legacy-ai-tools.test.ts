@@ -52,8 +52,24 @@ describe('legacy AI tools regression', () => {
     contextName.value = 'Regression context';
     (document.getElementById('save-context-config-btn') as HTMLButtonElement).click();
 
-    (document.getElementById('language-btn') as HTMLButtonElement).click();
+    const langBtn = document.getElementById('language-btn') as HTMLButtonElement;
+    expect(langBtn.closest('#top-nav-bar')).not.toBeNull();
+    expect(document.querySelector('#top-nav-bar #primary-tabs')).not.toBeNull();
+
+    langBtn.click();
     expect(document.getElementById('language-modal')?.classList.contains('hidden')).toBe(false);
+    (document.querySelector('[data-lang="en"]') as HTMLButtonElement).click();
+
+    expect(document.querySelector('[data-primary-tab="writing"]')?.textContent).toBe('Writing Assistant');
+    expect(document.querySelector('[data-primary-tab="tools"]')?.textContent).toBe('AI Tools');
+    expect(document.getElementById('image-btn')?.title).toBe('Send image');
+
+    langBtn.click();
+    (document.querySelector('[data-lang="es"]') as HTMLButtonElement).click();
+    expect(document.querySelector('[data-primary-tab="writing"]')?.textContent).toBe('Asistente de Escritura');
+    expect(document.querySelector('[data-primary-tab="tools"]')?.textContent).toBe('Herramientas de IA');
+
+    langBtn.click();
     (document.querySelector('[data-lang="en"]') as HTMLButtonElement).click();
 
     const moreButton = document.getElementById('more-btn') as HTMLButtonElement;
@@ -74,7 +90,7 @@ describe('legacy AI tools regression', () => {
     chatInput.dispatchEvent(new Event('input', { bubbles: true }));
     (document.getElementById('send-btn') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(requestBodies.at(-1)?.thinking).toEqual({ type: 'disabled' }));
-    await vi.waitFor(() => expect((document.getElementById('send-btn') as HTMLButtonElement).textContent).toBe('Send'));
+    await vi.waitFor(() => expect((document.getElementById('send-btn') as HTMLButtonElement).title).toBe('Send'));
 
     thinkingButton.click();
     (thinkingMenu.querySelector('[data-thinking-mode="nvidia-off"]') as HTMLButtonElement).click();

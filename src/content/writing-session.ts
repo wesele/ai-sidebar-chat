@@ -89,6 +89,33 @@ export class WritingSession {
     }
   }
 
+  /** Reset every unit and re-run the full detection immediately (e.g. when the target language changes). */
+  reanalyzeAll(): void {
+    if (!this.cache) return;
+    this.cancelPending();
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    this.cache.fullResult = undefined;
+    for (const paragraph of this.cache.paragraphs) {
+      paragraph.issue = undefined;
+      paragraph.status = 'never';
+      paragraph.analysisRevision = undefined;
+      for (const sentence of paragraph.sentences) {
+        sentence.localIssues = [];
+        sentence.sentenceIssue = undefined;
+        sentence.status = 'never';
+        sentence.analysisRevision = undefined;
+      }
+    }
+    this.cache.status = 'never';
+    this.cache.errorReason = undefined;
+    this.publish(this.cache);
+    this.dispatch(true);
+    this.requestFullDoc();
+  }
+
   private readonly onCompositionStart = (): void => {
     this.composing = true;
     if (this.timer) clearTimeout(this.timer);
@@ -429,13 +456,15 @@ export class WritingSession {
 
   acceptFull(result: FullDocumentResponse): void {
     const pending = this.pending.get(result.requestId);
-    if (
-      !this.cache ||
-      !pending ||
-      pending.kind !== 'full' ||
-      pending.revision !== this.cache.revision ||
-      result.documentRevision !== this.cache.revision
-    ) return;
+    if (!this.cache || !pending || pending.kind !== 'full') return;
+    if (pending.revision !== this.cache.revision || result.documentRevision !== this.cache.revision) {
+      // The document has been modified since this full-analysis request was
+      // issued, so the result is stale and can never match. Drop the pending
+      // entry to avoid an orphaned record that would keep fullAnalysisPending
+      // true forever (mirroring the same guard in accept() for unit requests).
+      this.pending.delete(result.requestId);
+      return;
+    }
     const valid = validateFullDocumentResponse(result, {
       requestId: result.requestId,
       documentRevision: this.cache.revision,

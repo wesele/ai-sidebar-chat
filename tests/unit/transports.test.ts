@@ -183,6 +183,34 @@ describe('analysis transport', () => {
     })).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' });
   });
 
+  it('includes full-document envelope fields in constrained decoding schema', async () => {
+    const request = {
+      schemaVersion: '1' as const,
+      requestId: 'full-envelope-id',
+      documentRevision: 7,
+      text: 'Document.',
+    };
+    const response = {
+      schemaVersion: '1' as const,
+      requestId: 'full-envelope-id',
+      documentRevision: 7,
+      severity: 'none' as const,
+      summary: 'Clear.',
+      suggestions: [],
+    };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(response) } }],
+    }), { status: 200 }));
+    const transport = new OpenAITransport(provider, fetcher as typeof fetch, false, true);
+
+    await expect(transport.full(request)).resolves.toEqual(response);
+    const [, init] = (fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>)[0];
+    const body = JSON.parse(init.body as string);
+    expect(body.guided_json.properties.schemaVersion).toEqual({ type: 'string' });
+    expect(body.guided_json.properties.requestId).toEqual({ type: 'string' });
+    expect(body.guided_json.properties.documentRevision).toEqual({ type: 'number' });
+  });
+
   it('supports Gemini unit/full requests, URL encoding, abort, and provider errors', async () => {
     const unit = { schemaVersion: '1', requestId: 'u', documentRevision: 1, units: [] };
     const full = {

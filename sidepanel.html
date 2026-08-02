@@ -8,10 +8,13 @@
   <link rel="stylesheet" href="src/sidepanel/writing-assistant.css">
 </head>
 <body class="gemini-theme">
-  <nav id="primary-tabs" aria-label="主导航">
-    <button type="button" data-primary-tab="writing" role="tab" aria-selected="false">写作助手</button>
-    <button type="button" data-primary-tab="tools" role="tab" aria-selected="true">AI 工具</button>
-  </nav>
+  <header id="top-nav-bar" class="top-nav-bar">
+    <nav id="primary-tabs" aria-label="主导航">
+      <button type="button" data-primary-tab="writing" role="tab" aria-selected="false">写作助手</button>
+      <button type="button" data-primary-tab="tools" role="tab" aria-selected="true">AI 工具箱</button>
+    </nav>
+    <button id="language-btn" class="language-btn" title="选择语言">🌐</button>
+  </header>
   <main id="writing-assistant-panel" role="tabpanel" hidden></main>
   <div id="app-container">
     <!-- Top Context Bar -->
@@ -20,7 +23,6 @@
         <!-- Context buttons will be injected here -->
       </div>
       <button id="add-context-btn" title="新建聊天">+</button>
-      <button id="language-btn" class="language-btn" title="选择语言">🌐</button>
     </div>
 
     <!-- Chat Area -->
@@ -64,7 +66,7 @@
           <input type="file" id="image-input" accept="image/*" multiple style="display:none">
           <button id="image-btn" title="Send image">📷</button>
           <button id="mic-btn" title="语音输入">🎤</button>
-          <button id="send-btn">➤</button>
+          <button id="send-btn" title="发送" aria-label="发送"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></button>
         </div>
       </div>
     </div>

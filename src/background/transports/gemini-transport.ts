@@ -5,7 +5,7 @@ import type {
   FullDocumentResponse,
 } from '../../shared/schemas';
 import type { ProviderConfig } from './openai-transport';
-import { normalizeAnalysisResponse } from './openai-transport';
+import { normalizeAnalysisResponse, normalizeFullDocumentResponse } from './openai-transport';
 import { fullAnalysisPrompt, unitAnalysisPrompt } from '../analysis-prompt';
 
 // ── Gemini responseSchema definitions ───────────────────────────────────────
@@ -100,12 +100,13 @@ export class GeminiTransport {
   }
 
   async full(request: FullDocumentRequest, signal?: AbortSignal, uiLanguage?: string): Promise<FullDocumentResponse> {
-    return this.post(
+    const data = await this.post<unknown>(
       fullAnalysisPrompt(request, uiLanguage, this.constrainedDecoding),
       this.constrainedDecoding ? FULL_DOCUMENT_TOOL : undefined,
       signal,
       this.constrainedDecoding ? FULL_DOCUMENT_TOOL_NAME : undefined,
     );
+    return normalizeFullDocumentResponse(data, request);
   }
 
   private async post<T>(payload: unknown, tool?: { name: string; description: string; parameters: unknown }, signal?: AbortSignal, toolName?: string): Promise<T> {

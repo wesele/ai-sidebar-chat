@@ -6,11 +6,11 @@ const DOT_SIZE = 8;
 const DOT_EDGE_GAP = 6;
 const LABEL_FONT_SCALE = 0.8;
 const LABEL_LINE_HEIGHT = 0.75;
-const LABEL_HORIZONTAL_OFFSET_EM = 0.125;
+const LABEL_PADDING_PX = 3;
 const UNDERLINE_HEIGHT = 4;
 const UNDERLINE_STROKE_WIDTH = 1.05;
 const DEFAULT_LABEL_COLOR = '#b85000';
-const DEFAULT_LABEL_BACKGROUND = '#fff3e6';
+const DEFAULT_LABEL_BACKGROUND = '#fff3e680';
 const MIN_SEGMENT_WIDTH = 24;
 
 export function splitAcrossRects(
@@ -79,7 +79,7 @@ export class AnnotationRenderer {
        .under.improvement{background-color:transparent;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4' viewBox='0 0 8 4'%3E%3Cpath d='M0 2 Q2 0 4 2 T8 2' fill='none' stroke='%232878d4' stroke-width='${UNDERLINE_STROKE_WIDTH}'/%3E%3C/svg%3E")}
        .paragraph{position:fixed;width:3px}
        .mark{font-family:sans-serif;font-size:var(--writing-label-font-size,80%);line-height:${LABEL_LINE_HEIGHT};
-         color:var(--writing-label-color,${DEFAULT_LABEL_COLOR});background:var(--writing-label-background,${DEFAULT_LABEL_BACKGROUND});border:0;border-radius:2px;padding:0 ${LABEL_HORIZONTAL_OFFSET_EM}em;white-space:normal;overflow-wrap:anywhere;max-width:calc(100vw - 16px);box-sizing:border-box;transform:translateY(calc(-100% - 1px))}
+         color:var(--writing-label-color,${DEFAULT_LABEL_COLOR});background:var(--writing-label-background,${DEFAULT_LABEL_BACKGROUND});border:0;border-radius:2px;padding:${LABEL_PADDING_PX}px;white-space:normal;overflow-wrap:anywhere;max-width:calc(100vw - 16px);box-sizing:border-box;transform:translateY(calc(-100% + 5px))}
       .analyzing{box-shadow:0 0 0 0 rgba(16,185,129,.7);animation:wa-pulse 1.5s infinite}
       @keyframes wa-pulse{
         0%{transform:scale(.95);box-shadow:0 0 0 0 rgba(16,185,129,.7)}
@@ -196,7 +196,7 @@ export class AnnotationRenderer {
       node.dataset.issueId = issue.issueId;
       node.dataset.issueScope = issue.scope;
       node.className = 'mark';
-      const left = rect.left - labelFontSize * LABEL_HORIZONTAL_OFFSET_EM;
+      const left = rect.left - LABEL_PADDING_PX;
       node.style.left = `${left}px`;
       node.style.top = `${rect.top}px`;
       node.style.width = 'auto';
@@ -237,7 +237,7 @@ export class AnnotationRenderer {
   private ensureMeasure(): HTMLDivElement {
     if (this.measure) return this.measure;
     const measure = document.createElement('div');
-    measure.style.cssText = `position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;font-family:sans-serif;white-space:normal;overflow-wrap:anywhere;box-sizing:border-box;margin:0;border:0;padding:0 ${LABEL_HORIZONTAL_OFFSET_EM}em`;
+    measure.style.cssText = `position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;font-family:sans-serif;white-space:normal;overflow-wrap:anywhere;box-sizing:border-box;margin:0;border:0;padding:${LABEL_PADDING_PX}px`;
     document.documentElement.append(measure);
     this.measure = measure;
     return measure;
@@ -255,5 +255,5 @@ export class AnnotationRenderer {
 }
 
 function validColor(value: string): boolean {
-  return value === 'transparent' || /^#[0-9a-f]{6}$/i.test(value);
+  return value === 'transparent' || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value);
 }

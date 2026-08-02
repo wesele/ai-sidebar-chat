@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const artifactDir = 'C:/Users/wh101/.gemini/antigravity-cli/brain/eed1c0c8-4183-475b-98ae-7f6a4791b830';
+const artifactDir = 'C:/Users/wh101/.gemini/antigravity-cli/brain/3fa7cd0d-ba73-4292-bd94-654a0c6f4b8f';
 
 async function main() {
   const browser = await chromium.launch({

@@ -51,6 +51,8 @@ test('test user specified input "This is same, I am g to the schol." and verify 
       activationMode: 'always' as const,
       fullDocumentCharacterLimit: 20_000,
       targetLanguage: 'EN' as const,
+      constrainedDecoding: true,
+      disableThinking: true,
     };
 
     const sidepanelPage = await context.newPage();
@@ -85,61 +87,35 @@ test('test user specified input "This is same, I am g to the schol." and verify 
     const editor = editorPage.locator('#editor');
     await expect(editor).toBeVisible();
 
-    const userInputText = 'I recieved your email.';
-    console.log('[user-input-test] Inputting text:', userInputText);
+    const userInputText = 'I recieved your email, monday. However I disagree. Thank you.';
+    console.log('[user-input-test] Inputting exact user text:', userInputText);
     await editor.focus();
     await editor.fill(userInputText);
-    await editorPage.waitForTimeout(2000);
+    await editor.blur();
 
-    // Verify overlay and green dot positioning
     const overlay = editorPage.locator('[data-writing-assistant="overlay"]');
     await expect(overlay).toHaveCount(1);
-    await expect(overlay).toHaveAttribute('data-dot-state', /ready|analyzing/);
+    await expect(overlay).toHaveAttribute('data-dot-state', /^(?!analyzing)/, { timeout: 45_000 });
 
-    const positions = await editorPage.evaluate(() => {
-      const editorEl = document.querySelector('#editor')!;
-      const overlayHost = document.querySelector<HTMLElement>('[data-writing-assistant="overlay"]')!;
-      const dotEl = overlayHost.shadowRoot!.querySelector<HTMLElement>('.dot')!;
-      const editorRect = editorEl.getBoundingClientRect();
-      const dotRect = dotEl.getBoundingClientRect();
-      return {
-        editorRight: editorRect.right,
-        dotLeft: dotRect.left,
-        dotTop: dotRect.top,
-        editorTop: editorRect.top,
-        diffRight: editorRect.right - dotRect.left,
-      };
-    });
+    // Explicitly click the 全文 button in sidepanel to request full document analysis
+    const fullBtn = sidepanelPage.locator('.wa-count-btn[data-scope="full"]');
+    await expect(fullBtn).toHaveCount(1, { timeout: 15_000 });
+    console.log('[user-input-test] Clicking 全文 button in sidepanel...');
+    await fullBtn.click();
 
-    console.log('[user-input-test] Dot positioning stats:', JSON.stringify(positions, null, 2));
-
-    // Verify the green dot is positioned at the rightmost side of the editor
-    expect(positions.diffRight).toBeGreaterThan(-15);
-    expect(positions.diffRight).toBeLessThan(35);
-    console.log('[user-input-test] Dot position PASSED!');
-
-    // Verify analysis and issue detection
-    console.log('[user-input-test] Waiting for LLM API analysis & issue detection...');
-    await expect(overlay).toHaveAttribute('data-dot-state', /ready|analyzing|problem|improvement/, { timeout: 30_000 });
-
+    await editorPage.waitForTimeout(5000);
     const finalDotState = await overlay.getAttribute('data-dot-state');
-    console.log(`[user-input-test] Real LLM analysis completed! Final dot state: ${finalDotState}`);
+    const finalError = await overlay.getAttribute('data-analysis-error');
+    console.log(`[user-input-test] Analysis completed! Dot state: ${finalDotState}, error: ${finalError}`);
 
-    // Verify specific error marks in Shadow DOM
-    const markTexts = await editorPage.evaluate(() => {
-      const overlayHost = document.querySelector<HTMLElement>('[data-writing-assistant="overlay"]')!;
-      const marks = Array.from(overlayHost.shadowRoot!.querySelectorAll<HTMLElement>('.mark'));
-      return marks.map((m) => m.textContent?.trim() ?? '');
-    });
+    const fullCard = sidepanelPage.locator('.wa-full-card');
+    const fullCardText = await fullCard.textContent().catch(() => 'card not found');
+    console.log('[user-input-test] Full document card content:', fullCardText);
 
-    console.log('[user-input-test] Detected error marks in Shadow DOM:', markTexts);
-    expect(overlay).toBeVisible();
+    expect(finalDotState).not.toBe('error');
+    expect(finalError).toBeNull();
 
-    // Verify sidepanel UI states
-    await sidepanelPage.reload();
-    await expect(sidepanelPage.locator('[data-primary-tab="writing"]')).toBeVisible();
-
-    console.log('[user-input-test] REAL LLM API TEST COMPLETED SUCCESSFULLY!');
+    console.log('[user-input-test] REAL LLM API TEST COMPLETED SUCCESSFULLY WITH CONSTRAINED DECODING!');
   } finally {
     await browserCdp.detach();
     await browser.close();

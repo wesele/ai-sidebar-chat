@@ -46,7 +46,7 @@ describe('AnnotationRenderer local issue', () => {
     expect(mark.title).toBe('Use the correct spelling.');
     expect(mark.getAttribute('aria-label')).toContain('Use the correct spelling.');
     expect(mark.style.height).toBe('auto');
-    expect(mark.style.left).toBe('23px');
+    expect(mark.style.left).toBe('22px');
     expect(mark.style.top).toBe('35px');
     mark.click();
     expect(apply).toHaveBeenCalledWith('issue-1');
@@ -110,12 +110,12 @@ describe('AnnotationRenderer local issue', () => {
   it('applies configured replacement label appearance', () => {
     const renderer = new AnnotationRenderer(vi.fn(), vi.fn());
     renderer.setEditorFontSize('20px');
-    renderer.setReplacementAppearance(0.7, '#123456', '#abcdef');
+    renderer.setReplacementAppearance(0.7, '#123456', '#abcdef80');
 
     const host = document.querySelector<HTMLElement>('[data-writing-assistant="overlay"]')!;
     expect(host.style.getPropertyValue('--writing-label-font-size')).toBe('14px');
     expect(host.style.getPropertyValue('--writing-label-color')).toBe('#123456');
-    expect(host.style.getPropertyValue('--writing-label-background')).toBe('#abcdef');
+    expect(host.style.getPropertyValue('--writing-label-background')).toBe('#abcdef80');
   });
 
   it('renders the latest issue set when updates arrive in the same frame', () => {

@@ -56,7 +56,7 @@ describe('content entry settings updates', () => {
     vi.useRealTimers();
   });
 
-  it('does not restart completed analysis when settings are saved', async () => {
+  it('does not restart completed analysis when non-language settings are saved', async () => {
     dispatch({
       v: 1,
       type: 'WRITING_MODEL_STATUS',
@@ -86,16 +86,63 @@ describe('content entry settings updates', () => {
     });
     await Promise.resolve();
     const requestCount = sent.filter((message) => message.type === 'ANALYSIS_REQUESTED').length;
+    const fullCount = sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED').length;
 
     dispatch({
       v: 1,
       type: 'SETTINGS_UPDATED',
       correlationId: 'settings-update',
-      payload: { ...settings, targetLanguage: 'ES' },
+      payload: { ...settings, targetLanguage: 'EN', invocationStrategy: 'parallel' },
     });
     await Promise.resolve();
     vi.runOnlyPendingTimers();
 
     expect(sent.filter((message) => message.type === 'ANALYSIS_REQUESTED')).toHaveLength(requestCount);
+    expect(sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED')).toHaveLength(fullCount);
+  });
+
+  it('restarts full detection immediately when the target language changes', async () => {
+    // The previous test left every unit analyzed; edit the text to produce a
+    // fresh dirty set before verifying the language-switch re-detection.
+    const editor = document.querySelector<HTMLTextAreaElement>('#editor')!;
+    editor.value = 'A different sentence to check.';
+    editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    vi.runOnlyPendingTimers();
+    await vi.waitFor(() => expect(sent.some((message) => message.type === 'ANALYSIS_REQUESTED')).toBe(true));
+
+    const request = sent.find((message): message is Extract<RuntimeMessage, { type: 'ANALYSIS_REQUESTED' }> => message.type === 'ANALYSIS_REQUESTED');
+    expect(request).toBeDefined();
+    if (!request) return;
+
+    dispatch({
+      v: 1,
+      type: 'ANALYSIS_COMPLETED',
+      correlationId: request.correlationId,
+      payload: {
+        schemaVersion: '1',
+        requestId: request.payload.requestId,
+        documentRevision: request.payload.documentRevision,
+        units: request.payload.units.map((unit) => ({
+          unitId: unit.unitId,
+          unitRevision: unit.unitRevision,
+          issues: [],
+        })),
+      },
+    });
+    await Promise.resolve();
+    const requestCount = sent.filter((message) => message.type === 'ANALYSIS_REQUESTED').length;
+    const fullCount = sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED').length;
+
+    dispatch({
+      v: 1,
+      type: 'SETTINGS_UPDATED',
+      correlationId: 'settings-language',
+      payload: { ...settings, targetLanguage: 'ES' },
+    });
+    await Promise.resolve();
+    vi.runOnlyPendingTimers();
+
+    expect(sent.filter((message) => message.type === 'ANALYSIS_REQUESTED')).toHaveLength(requestCount + 1);
+    expect(sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED')).toHaveLength(fullCount + 1);
   });
 });

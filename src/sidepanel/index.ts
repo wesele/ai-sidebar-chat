@@ -84,6 +84,24 @@ function init(): void {
   void runtime.storage.get<WritingSettings>('writingAssistantSettings')
     .then((settings) => panel.setSettings(settings ?? defaults))
     .catch(() => panel.setSettings(defaults));
+  void runtime.storage.get<{ language?: string }>('language')
+    .then((res) => { if (res?.language) panel.setLanguage(res.language); })
+    .catch(() => undefined);
+
+  window.addEventListener('app-language-changed', (e: Event) => {
+    const customEvent = e as CustomEvent<{ lang: string }>;
+    if (customEvent.detail?.lang) {
+      panel.setLanguage(customEvent.detail.lang);
+    }
+  });
+
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes.language?.newValue) {
+        panel.setLanguage(changes.language.newValue as string);
+      }
+    });
+  }
 
   runtime.messaging.onMessage((message, sender) => {
     if (message.type === 'EDITOR_STATE_CHANGED') {

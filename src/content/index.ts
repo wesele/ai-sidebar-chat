@@ -31,7 +31,7 @@ let settings = {
   targetLanguage: 'EN' as TargetLanguage,
   replacementFontScale: 0.8,
   replacementTextColor: '#b85000',
-  replacementBackgroundColor: '#fff3e6',
+  replacementBackgroundColor: '#fff3e680',
 };
 
 const send = (message: RuntimeMessage): void => {
@@ -180,7 +180,7 @@ void runtime.storage
       targetLanguage: saved?.targetLanguage ?? 'EN',
       replacementFontScale: saved?.replacementFontScale ?? 0.8,
       replacementTextColor: saved?.replacementTextColor ?? '#b85000',
-      replacementBackgroundColor: saved?.replacementBackgroundColor ?? '#fff3e6',
+      replacementBackgroundColor: saved?.replacementBackgroundColor ?? '#fff3e680',
     };
     initialized = true;
     activation.update(settings.activationMode);
@@ -200,6 +200,7 @@ send({
 
 runtime.messaging.onMessage((message) => {
   if (message.type === 'SETTINGS_UPDATED') {
+    const previousTargetLanguage = settings.targetLanguage;
     settings = { ...settings, ...message.payload };
     const action = activation.update(settings.activationMode);
     if (action === 'stop') stop();
@@ -209,6 +210,9 @@ runtime.messaging.onMessage((message) => {
         settings.replacementTextColor,
         settings.replacementBackgroundColor,
       );
+      if (message.payload.targetLanguage !== undefined && message.payload.targetLanguage !== previousTargetLanguage) {
+        session?.reanalyzeAll();
+      }
       start();
     }
   } else if (message.type === 'WRITING_MODEL_STATUS') {

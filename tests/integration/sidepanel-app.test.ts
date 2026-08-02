@@ -149,7 +149,7 @@ describe('writing side panel', () => {
     expect(persist).toHaveBeenCalledWith({
       providerId: 'p', modelId: 'm', invocationStrategy: 'parallel', maxConcurrency: 5,
        activationMode: 'panel_open', fullDocumentCharacterLimit: 1234, targetLanguage: 'EN',
-       replacementFontScale: 0.7, replacementTextColor: '#123456', replacementBackgroundColor: '#abcdef',
+       replacementFontScale: 0.7, replacementTextColor: '#123456', replacementBackgroundColor: '#abcdef80',
        disableThinking: true, constrainedDecoding: false,
     });
   });
@@ -199,6 +199,31 @@ describe('writing side panel', () => {
     expect(root.querySelector('[data-writing-settings] form')!.querySelector('.wa-color-swatch.active')).not.toBeNull();
   });
 
+  it('defaults built-in background presets to 50% opacity and exposes an opacity slider', () => {
+    const root = document.createElement('div');
+    const persist = vi.fn(async () => undefined);
+    const panel = new WritingAssistantPanel(root, persist, vi.fn());
+    panel.setProviders([{ id: 'p', name: 'Provider', models: ['m'] }]);
+    panel.setSettings({
+      providerId: 'p', modelId: 'm', invocationStrategy: 'batch', maxConcurrency: 3,
+      activationMode: 'always', fullDocumentCharacterLimit: 20000,
+      replacementFontScale: 0.8, replacementTextColor: '#b85000', replacementBackgroundColor: '#fff3e6',
+    });
+    root.querySelector<HTMLButtonElement>('[data-writing-settings-button]')!.click();
+    const background = root.querySelector<HTMLElement>('[data-writing-settings] .wa-color-field:nth-of-type(2)');
+    const firstSwatch = background?.querySelector<HTMLButtonElement>('.wa-color-swatch');
+    expect(firstSwatch?.dataset.color).toBe('#fff3e680');
+    const opacityInput = background?.querySelector<HTMLInputElement>('input[type="range"]');
+    expect(opacityInput).not.toBeNull();
+    expect(opacityInput?.value).toBe('50');
+    firstSwatch?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    opacityInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(background?.querySelector('.wa-opacity-value')?.textContent).toBe('50%');
+    root.querySelector('[data-writing-settings] form')!
+      .dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ replacementBackgroundColor: '#fff3e680' }));
+  });
+
   it('shows clickable failure status, opens error reason modal, and triggers retry command', () => {
     const root = document.createElement('div');
     const command = vi.fn();
@@ -240,7 +265,7 @@ describe('writing side panel', () => {
     expect(document.body.querySelector('[data-writing-error-modal="true"]')).toBeNull();
   });
 
-  it('renders grey 全文 button when untriggered and sends REQUEST_FULL_ANALYSIS command on click', () => {
+  it('requests full analysis once, then toggles the full result without re-requesting', () => {
     const root = document.createElement('div');
     const command = vi.fn();
     const panel = new WritingAssistantPanel(root, vi.fn(async () => undefined), command);
@@ -267,6 +292,32 @@ describe('writing side panel', () => {
     }, 7);
     expect(root.querySelector('.wa-full-card')?.textContent).toContain('正在评审…');
     expect(root.querySelector('.wa-full-card')?.textContent).not.toContain('暂无全文建议');
+
+    // Closing and reopening while the request is pending must not start another request.
+    let currentFullBtn = Array.from(root.querySelectorAll('button')).find((button) => button.textContent?.includes('全文'))!;
+    currentFullBtn.click();
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(root.querySelector('.wa-full-card')).toBeNull();
+    currentFullBtn = Array.from(root.querySelectorAll('button')).find((button) => button.textContent?.includes('全文'))!;
+    currentFullBtn.click();
+    expect(command).toHaveBeenCalledTimes(1);
+
+    panel.setState({
+      editorId: 'e',
+      revision: 1,
+      status: 'analyzed',
+      counts: { sentence: 1 },
+      fullResult: { severity: 'none', summary: 'Clear.', suggestions: [] },
+    }, 7);
+    expect(root.querySelector('.wa-full-card')?.textContent).toContain('Clear.');
+    currentFullBtn = Array.from(root.querySelectorAll('button')).find((button) => button.textContent?.includes('全文'))!;
+    currentFullBtn.click();
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(root.querySelector('.wa-full-card')).toBeNull();
+    currentFullBtn = Array.from(root.querySelectorAll('button')).find((button) => button.textContent?.includes('全文'))!;
+    currentFullBtn.click();
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(root.querySelector('.wa-full-card')?.textContent).toContain('Clear.');
   });
 
   it('renders writing language selector with EN, ES, CN options and config icon button', () => {
@@ -291,5 +342,28 @@ describe('writing side panel', () => {
     langSelect!.value = 'CN';
     langSelect!.dispatchEvent(new Event('change'));
     expect(persist).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'CN' }));
+  });
+
+  it('updates UI language when setLanguage is called for zh-CN, en, and es', () => {
+    const root = document.createElement('div');
+    const panel = new WritingAssistantPanel(root, vi.fn(async () => undefined), vi.fn());
+    
+    // Default is zh-CN
+    expect(root.querySelector('.wa-status')?.textContent).toContain('聚焦一个编辑器以开始');
+    expect(root.querySelector<HTMLButtonElement>('[data-writing-settings-button="true"]')?.title).toBe('配置');
+
+    // Switch to English
+    panel.setLanguage('en');
+    expect(root.querySelector('.wa-status')?.textContent).toContain('Focus an editor to start');
+    expect(root.querySelector<HTMLButtonElement>('[data-writing-settings-button="true"]')?.title).toBe('Settings');
+
+    // Switch to Spanish
+    panel.setLanguage('es');
+    expect(root.querySelector('.wa-status')?.textContent).toContain('Enfoca un editor para comenzar');
+    expect(root.querySelector<HTMLButtonElement>('[data-writing-settings-button="true"]')?.title).toBe('Configuración');
+
+    // Switch back to zh-CN
+    panel.setLanguage('zh-CN');
+    expect(root.querySelector('.wa-status')?.textContent).toContain('聚焦一个编辑器以开始');
   });
 });

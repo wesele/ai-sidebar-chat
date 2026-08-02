@@ -197,12 +197,19 @@ export function validateFullDocumentResponse(
   }>;
 } | undefined {
   if (!isRecord(value)) return undefined;
+  if (typeof value.summary !== 'string') return undefined;
+  const summary = value.summary;
+  const hasEmptyClearSummary =
+    summary === '' &&
+    value.severity === 'none' &&
+    Array.isArray(value.suggestions) &&
+    value.suggestions.length === 0;
   if (
     value.schemaVersion !== '1' ||
     value.requestId !== expected.requestId ||
     value.documentRevision !== expected.documentRevision ||
     !['none', 'improvement', 'problem'].includes(value.severity as string) ||
-    !plainText(value.summary, 2_000) ||
+    (!plainText(summary, 2_000) && !hasEmptyClearSummary) ||
     !Array.isArray(value.suggestions) ||
     value.suggestions.length > 20 ||
     'replacement' in value
@@ -228,7 +235,7 @@ export function validateFullDocumentResponse(
   }
   return {
     severity: value.severity as 'none' | 'improvement' | 'problem',
-    summary: value.summary,
+    summary,
     suggestions,
   };
 }

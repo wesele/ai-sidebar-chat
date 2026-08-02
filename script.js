@@ -38,7 +38,11 @@ const DEFAULT_PROVIDER = {
   googleSearch: false
 };
 
+
 const REMOVED_WEB_PROVIDER_IDS = new Set(['qwen-web', 'deepseek-web']);
+
+const SEND_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
+const STOP_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2" ry="2"></rect></svg>';
 
 // Image state
 let selectedImages = [];
@@ -50,6 +54,18 @@ let recognition = null;
 // Translations
 const translations = {
   'en': {
+    primaryTabWriting: 'Writing Assistant',
+    primaryTabTools: 'AI Tools',
+    sendImage: 'Send image',
+    fetchModels: 'Fetch Online Models',
+    providerName: 'Provider Name',
+    unnamedProvider: 'Unnamed Provider',
+    deleteProvider: 'Delete this provider',
+    copy: 'Copy',
+    copied: 'Copied!',
+    copyMainContent: 'Copy main content',
+    thinkingProcess: 'Thinking process',
+    thinkingInProgress: 'Thinking...',
     welcome: 'Select or create a chat context to start.',
     newChat: 'New Chat',
     apiConfig: 'API Config',
@@ -104,7 +120,6 @@ const translations = {
     connectionSuccessWrongFormat: 'Connection successful, but response format is unexpected.',
     connectionFailed: 'Connection failed: ',
     stop: 'Stop',
-    send: 'Send',
     startRecording: 'Voice input',
     stopRecording: 'Stop recording',
     statsToggleOn: 'Hide timing stats',
@@ -113,9 +128,24 @@ const translations = {
     messageAlignBothLeft: 'Both on left'
   },
   'zh-CN': {
+    primaryTabWriting: '写作助手',
+    primaryTabTools: 'AI 工具箱',
+    sendImage: '发送图片',
+    fetchModels: '拉取在线模型',
+    providerName: '供应商名称',
+    unnamedProvider: '未命名供应商',
+    deleteProvider: '删除此供应商',
+    copy: '复制',
+    copied: '已复制!',
+    copyMainContent: '复制正文',
+    thinkingProcess: '思考过程',
+    thinkingInProgress: '正在思考...',
     welcome: '请选择或新建一个聊天上下文开始。',
     newChat: '新聊天',
     apiConfig: 'API配置',
+    more: '更多',
+    timingMetrics: '时间指标',
+    alignment: '对齐',
     selectModel: '选择模型...',
     thinkingToggle: '思考模式（点击选择）',
     clear: '清空',
@@ -164,7 +194,6 @@ const translations = {
     connectionSuccessWrongFormat: '连接成功，但返回格式不符合预期。',
     connectionFailed: '连接失败: ',
     stop: '停止',
-    send: '发送',
     startRecording: '语音输入',
     stopRecording: '停止录音',
     statsToggleOn: '隐藏时间指标',
@@ -173,6 +202,18 @@ const translations = {
     messageAlignBothLeft: '都在左侧'
   },
   'es': {
+    primaryTabWriting: 'Asistente de Escritura',
+    primaryTabTools: 'Herramientas de IA',
+    sendImage: 'Enviar imagen',
+    fetchModels: 'Obtener Modelos En Línea',
+    providerName: 'Nombre del Proveedor',
+    unnamedProvider: 'Proveedor sin Nombre',
+    deleteProvider: 'Eliminar este proveedor',
+    copy: 'Copiar',
+    copied: '¡Copiado!',
+    copyMainContent: 'Copiar contenido principal',
+    thinkingProcess: 'Proceso de pensamiento',
+    thinkingInProgress: 'Pensando...',
     welcome: 'Selecciona o crea un chat para comenzar.',
     newChat: 'Nuevo Chat',
     apiConfig: 'Config. API',
@@ -181,52 +222,6 @@ const translations = {
     alignment: 'Alineación',
     selectModel: 'Seleccionar modelo...',
     thinkingToggle: 'Modo de pensamiento (haz clic para elegir)',
-    clear: 'Limpiar',
-    inputPlaceholder: 'Escribe un mensaje... (Shift+Enter para nueva línea)',
-    send: 'Enviar',
-    modelApiConfig: 'Configuración de API del Modelo',
-    providersList: 'Lista de Proveedores',
-    addProvider: 'Agregar Proveedor',
-    saveCurrentChanges: 'Guardar Cambios Actuales',
-    contextConfig: 'Configuración de Contexto',
-    name: 'Nombre',
-    systemPrompt: 'Prompt del Sistema',
-    maxHistory: 'Máx. mensajes (0=ilimitado, 1=solo actual)',
-    temperature: 'Temperatura',
-    topP: 'Top P',
-    otherParams: 'Otros parámetros (JSON)',
-    reasoningEffort: 'reasoning_effort',
-    speechConfigTitle: 'Configuración de Voz',
-    speechLangLabel: 'Idioma de entrada',
-    speechSensitivityLabel: 'Retardo de envío',
-    speechStartBtn: 'Iniciar Grabación',
-    speechFast: 'Corto',
-    speechSlow: 'Largo',
-    exportAll: 'Exportar Todo',
-    importConfig: 'Importar Config',
-    exportModelConfig: 'Exportar Config. Modelos',
-    importModelConfig: 'Importar Config. Modelos',
-    save: 'Guardar',
-    selectModelToAdd: 'Seleccionar modelos para agregar',
-    addSelectedModels: 'Agregar Modelos Seleccionados',
-    filterModels: 'Filtrar modelos...',
-    addModel: 'Agregar',
-    modelsList: 'Lista de Modelos',
-    addModelPlaceholder: 'Agregar modelo...',
-    noModels: 'Sin modelos',
-    edit: 'Editar',
-    delete: 'Eliminar',
-    selectLanguage: 'Seleccionar Idioma',
-    emptyState: 'Selecciona un proveedor de la izquierda para editar',
-    confirmDeleteContext: '¿Eliminar este chat?',
-    confirmClearHistory: '¿Borrar todo el historial del chat?',
-    keepOneContext: 'Debes mantener al menos un chat',
-    confirmDeleteProvider: '¿Eliminar este proveedor?',
-    connecting: 'Conectando...',
-    connectionSuccessNoModels: 'Conexión exitosa, pero no se encontraron modelos.',
-    connectionSuccessWrongFormat: 'Conexión exitosa, pero el formato de respuesta es inesperado.',
-    connectionFailed: 'Error de conexión: ',
-    stop: 'Detener',
     send: 'Enviar',
     startRecording: 'Entrada de voz',
     stopRecording: 'Detener grabación',
@@ -244,6 +239,13 @@ function t(key) {
 }
 
 function applyTranslations() {
+  // Primary Tabs
+  var writingTabBtn = document.querySelector('[data-primary-tab="writing"]');
+  if (writingTabBtn) writingTabBtn.textContent = t('primaryTabWriting');
+  var toolsTabBtn = document.querySelector('[data-primary-tab="tools"]');
+  if (toolsTabBtn) toolsTabBtn.textContent = t('primaryTabTools');
+  if (els.languageBtn) els.languageBtn.title = t('selectLanguage');
+
   // Welcome message
   var welcomeEl = document.querySelector('.welcome-message');
   if (welcomeEl) welcomeEl.textContent = t('welcome');
@@ -253,7 +255,7 @@ function applyTranslations() {
   
   // More menu
   if (els.moreBtn) {
-    els.moreBtn.textContent = currentLang === 'zh-CN' ? '\u66f4\u591a' : t('more');
+    els.moreBtn.textContent = t('more');
   }
 
   // Config button
@@ -286,8 +288,15 @@ function applyTranslations() {
   if (els.chatInput) els.chatInput.placeholder = t('inputPlaceholder');
   
   // Send button
-  if (els.sendBtn) els.sendBtn.textContent = t('send');
+  if (els.sendBtn) {
+    els.sendBtn.title = isGenerating ? t('stop') : t('send');
+    els.sendBtn.setAttribute('aria-label', isGenerating ? t('stop') : t('send'));
+    els.sendBtn.innerHTML = isGenerating ? STOP_ICON : SEND_ICON;
+  }
   
+  // Image button
+  if (els.imageBtn) els.imageBtn.title = t('sendImage');
+
   // Mic button
   if (els.micBtn) els.micBtn.title = t('startRecording');
   
@@ -302,6 +311,9 @@ function applyTranslations() {
   if (els.importModelsBtn) els.importModelsBtn.textContent = t('importModelConfig');
   var apiEmptyState = document.querySelector('#api-config-modal .empty-state');
   if (apiEmptyState) apiEmptyState.textContent = t('emptyState');
+  if (typeof currentEditingProviderId !== 'undefined' && currentEditingProviderId) {
+    renderProviderForm();
+  }
   
   // Context Config Modal
   var ctxModalH3 = document.querySelector('#context-config-modal h3');
@@ -332,6 +344,10 @@ function applyTranslations() {
   var speechSensitivityLabel = document.getElementById('speech-sensitivity-label');
   if (speechSensitivityLabel) speechSensitivityLabel.textContent = t('speechSensitivityLabel');
   if (els.speechStartBtn) els.speechStartBtn.textContent = t('speechStartBtn');
+  var speechFastBtn = document.querySelector('#speech-config-modal .speech-sensitivity-btn[data-delay="1000"]');
+  if (speechFastBtn) speechFastBtn.textContent = t('speechFast');
+  var speechSlowBtn = document.querySelector('#speech-config-modal .speech-sensitivity-btn[data-delay="2500"]');
+  if (speechSlowBtn) speechSlowBtn.textContent = t('speechSlow');
   
   // Model Selection Modal
   var modelModalH3 = document.querySelector('#model-selection-modal h3');
@@ -356,6 +372,8 @@ function applyTranslations() {
   langOptions.forEach(function(btn) {
     btn.classList.toggle('selected', btn.getAttribute('data-lang') === currentLang);
   });
+
+  window.dispatchEvent(new CustomEvent('app-language-changed', { detail: { lang: currentLang } }));
 }
 
 let state = {
@@ -852,7 +870,9 @@ async function sendMessage() {
   els.chatInput.value = '';
   adjustInputHeight();
   sendCount++;
-  els.sendBtn.textContent = t('stop');
+  els.sendBtn.title = t('stop');
+  els.sendBtn.setAttribute('aria-label', t('stop'));
+  els.sendBtn.innerHTML = STOP_ICON;
   isGenerating = true;
   
   // Create user message with images if present
@@ -990,16 +1010,18 @@ async function sendMessage() {
        assistantMsg.content += '\n[已中断]';
        ctx.messages.push(assistantMsg);
        await saveState();
-    } else {
-       ctx.messages.pop();
-       msgDiv.innerHTML += `<br><span style="color:red">Error: ${escapeHtml(err.message)}</span>`;
-    }
+     } else {
+        ctx.messages.pop();
+        msgDiv.innerHTML += `<br><span style="color:red">Error: ${escapeHtml(err.message)}</span>`;
+     }
   } finally {
     sendCount--;
     if (sendCount <= 0) {
       sendCount = 0;
       isGenerating = false;
-      els.sendBtn.textContent = t('send');
+      els.sendBtn.title = t('send');
+      els.sendBtn.setAttribute('aria-label', t('send'));
+      els.sendBtn.innerHTML = SEND_ICON;
       abortController = null;
     }
     els.chatInput.focus();

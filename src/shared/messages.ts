@@ -138,7 +138,7 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
       (settings.targetLanguage === undefined || ['EN', 'ES', 'CN'].includes(settings.targetLanguage)) &&
       (settings.replacementFontScale === undefined || (typeof settings.replacementFontScale === 'number' && Number.isFinite(settings.replacementFontScale) && settings.replacementFontScale >= 0.25 && settings.replacementFontScale <= 2)) &&
       (settings.replacementTextColor === undefined || (typeof settings.replacementTextColor === 'string' && (settings.replacementTextColor === 'transparent' || /^#[0-9a-f]{6}$/i.test(settings.replacementTextColor)))) &&
-      (settings.replacementBackgroundColor === undefined || (typeof settings.replacementBackgroundColor === 'string' && (settings.replacementBackgroundColor === 'transparent' || /^#[0-9a-f]{6}$/i.test(settings.replacementBackgroundColor)))) &&
+      (settings.replacementBackgroundColor === undefined || (typeof settings.replacementBackgroundColor === 'string' && (settings.replacementBackgroundColor === 'transparent' || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(settings.replacementBackgroundColor)))) &&
       (settings.disableThinking === undefined || typeof settings.disableThinking === 'boolean') &&
       (settings.constrainedDecoding === undefined || typeof settings.constrainedDecoding === 'boolean');
   }

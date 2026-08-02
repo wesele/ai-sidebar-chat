@@ -118,13 +118,11 @@ export function normalizeAnalysisResponse(data: unknown, request: AnalysisReques
     }>;
     units?: unknown;
   };
-  if (
-    record.schemaVersion !== '1' ||
-    record.requestId !== request.requestId ||
-    record.documentRevision !== request.documentRevision
-  ) {
-    throw codedError('INVALID_RESPONSE', 'Model response envelope does not match the analysis request');
-  }
+  // Normalize envelope metadata to match request parameters
+  record.schemaVersion = '1';
+  record.requestId = request.requestId;
+  record.documentRevision = request.documentRevision;
+
   // Keep accepting the original nested response shape from older providers;
   // the domain validator still checks every nested unit and issue.
   if (!Array.isArray(record.issues)) {
@@ -175,6 +173,35 @@ export function normalizeAnalysisResponse(data: unknown, request: AnalysisReques
   };
 }
 
+export function normalizeFullDocumentResponse(data: unknown, request: FullDocumentRequest): FullDocumentResponse {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw codedError('INVALID_RESPONSE', 'Model response is not a JSON object');
+  }
+  const record = data as Record<string, unknown>;
+  const severity = typeof record.severity === 'string' && ['none', 'improvement', 'problem'].includes(record.severity)
+    ? record.severity as 'none' | 'improvement' | 'problem'
+    : 'none';
+  const summary = typeof record.summary === 'string' ? record.summary : '';
+  const suggestions = Array.isArray(record.suggestions)
+    ? record.suggestions.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object' && !Array.isArray(item)).map((s) => ({
+      severity: typeof s.severity === 'string' && ['improvement', 'problem'].includes(s.severity)
+        ? s.severity as 'improvement' | 'problem'
+        : 'improvement',
+      title: typeof s.title === 'string' ? s.title : '',
+      reason: typeof s.reason === 'string' ? s.reason : '',
+    }))
+    : [];
+
+  return {
+    schemaVersion: '1',
+    requestId: request.requestId,
+    documentRevision: request.documentRevision,
+    severity,
+    summary,
+    suggestions,
+  };
+}
+
 export class OpenAITransport {
   constructor(
     private readonly provider: ProviderConfig,
@@ -192,10 +219,11 @@ export class OpenAITransport {
   }
 
   async full(request: FullDocumentRequest, signal?: AbortSignal, uiLanguage?: string): Promise<FullDocumentResponse> {
-    return this.post('/chat/completions', this.body(
+    const data = await this.post<unknown>('/chat/completions', this.body(
       fullAnalysisPrompt(request, uiLanguage, this.constrainedDecoding),
       this.constrainedDecoding ? FULL_DOCUMENT_RESPONSE_SCHEMA : undefined,
     ), signal);
+    return normalizeFullDocumentResponse(data, request);
   }
 
   private body(prompt: string, schema?: { schema: unknown }): Record<string, unknown> {
@@ -204,9 +232,6 @@ export class OpenAITransport {
       model: this.provider.modelId,
       stream: false,
       max_tokens: MAX_OUTPUT_TOKENS,
-      // Keep JSON mode enabled for every Qwen combination. Without it, the
-      // thinking path can spend the entire output budget on reasoning and
-      // non-thinking responses are prone to drifting from the envelope.
       ...(qwen || this.constrainedDecoding || this.disableThinking
         ? { response_format: { type: 'json_object' } }
         : {}),

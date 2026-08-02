@@ -134,4 +134,65 @@ describe('WritingSession races', () => {
     session.stop();
     vi.useRealTimers();
   });
+
+  it('reanalyzeAll resets every unit and immediately re-triggers unit and full detection', () => {
+    vi.useFakeTimers();
+    const text = 'I recieved it.';
+    const unitRequests: Array<{ requestId: string; units: Array<{ unitId: string; unitRevision: number; unitType: 'sentence' | 'paragraph' }> }> = [];
+    const fullRequests: Array<{ requestId: string }> = [];
+
+    const adapter = {
+      element: document.createElement('textarea'),
+      kind: 'textarea',
+      readSnapshot: vi.fn(() => createSnapshot({
+        editorId: 'e', documentRevision: 1, sourceKind: 'textarea', source: text,
+        selection: { start: text.length, end: text.length }, composing: false, createdAt: 0,
+      })),
+      getCaretGeometry: () => null,
+      getRangeGeometry: () => [],
+      replaceRanges: () => ({ applied: 0, skipped: 0 }),
+      observe: () => () => undefined,
+    } as unknown as EditorAdapter;
+
+    const session = new WritingSession(
+      adapter,
+      (r) => unitRequests.push(r),
+      (id) => fullRequests.push({ requestId: id }),
+      () => undefined,
+      () => undefined,
+      () => ({ hasModel: true, fullDocumentCharacterLimit: 20000, targetLanguage: 'EN' }),
+    );
+
+    session.start();
+    vi.advanceTimersByTime(1500);
+    expect(unitRequests).toHaveLength(1);
+
+    session.accept({
+      schemaVersion: '1',
+      requestId: unitRequests[0].requestId,
+      documentRevision: 1,
+      units: unitRequests[0].units.map((u) => ({
+        unitId: u.unitId,
+        unitRevision: u.unitRevision,
+        issues: u.unitType === 'sentence'
+          ? [{ issueId: 'x', scope: 'local' as const, severity: 'problem' as const, start: 2, end: 10, original: 'recieved', replacement: 'received', reason: 'Use the correct spelling.', category: 'spelling' as const }]
+          : [],
+      })),
+    });
+    expect(session.current()?.status).toBe('analyzed');
+    expect(session.issues()).toHaveLength(1);
+
+    const unitCount = unitRequests.length;
+    const fullCount = fullRequests.length;
+
+    session.reanalyzeAll();
+
+    expect(session.issues()).toEqual([]);
+    expect(session.viewState()?.status).toBe('queued');
+    expect(unitRequests).toHaveLength(unitCount + 1);
+    expect(fullRequests).toHaveLength(fullCount + 1);
+
+    session.stop();
+    vi.useRealTimers();
+  });
 });

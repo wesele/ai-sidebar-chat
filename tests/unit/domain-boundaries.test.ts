@@ -59,6 +59,17 @@ describe('domain boundary behavior', () => {
     expect(validateFullDocumentResponse({ ...full, suggestions: [null] }, { requestId: 'r', documentRevision: 2 })).toBeUndefined();
     expect(validateFullDocumentResponse(null, { requestId: 'r', documentRevision: 2 })).toBeUndefined();
 
+    const clear = {
+      schemaVersion: '1', requestId: 'clear', documentRevision: 1,
+      severity: 'none', summary: '', suggestions: [],
+    };
+    expect(validateFullDocumentResponse(clear, { requestId: 'clear', documentRevision: 1 })).toEqual({
+      severity: 'none', summary: '', suggestions: [],
+    });
+    expect(validateFullDocumentResponse({ ...clear, severity: 'improvement' }, {
+      requestId: 'clear', documentRevision: 1,
+    })).toBeUndefined();
+
     const expected = { requestId: 'r', documentRevision: 1, units: [{ id: 's', revision: 1, type: 'sentence' as const, text: 'Bad text.' }] };
     expect(validateResponse({ schemaVersion: '1', requestId: 'wrong', documentRevision: 1, units: [] }, expected).rejected).toEqual(['response']);
     expect(validateResponse({ schemaVersion: '1', requestId: 'r', documentRevision: 1, units: [null] }, expected).rejected).toEqual(['unit']);

@@ -808,3 +808,140 @@ test('10. cursor movement does not trigger re-analysis (no new LLM request dispa
     await closeAll();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Test 11: full-analysis pending cleanup — typing during analysis must not
+// permanently stall the dot in "analyzing" state
+//
+// Bug: acceptFull() returned early without calling this.pending.delete() when
+// the document revision changed mid-flight (user typed while LLM was running).
+// The orphaned pending entry kept fullAnalysisPending=true forever so the dot
+// never left "analyzing".
+// After the fix, the dot must exit "analyzing" within a reasonable window even
+// when a text edit invalidates the in-flight full-analysis result.
+// ---------------------------------------------------------------------------
+
+test('11. full-analysis: dot exits analyzing even when user types mid-flight (revision change)', async ({}, testInfo) => {
+  test.setTimeout(240_000);
+  const executablePath =
+    testInfo.project.name === 'edge'
+      ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+      : 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+
+  const { context, extensionId, closeAll } = await launchWithExtension(executablePath);
+  try {
+    const sidepanelPage = await context.newPage();
+    await sidepanelPage.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await injectWritingSettings(sidepanelPage, USER_PROVIDER, WRITING_SETTINGS);
+
+    const writingTab = sidepanelPage.locator('[data-primary-tab="writing"]');
+    await writingTab.click();
+
+    context.serviceWorkers()[0] ??
+      (await context.waitForEvent('serviceworker', { timeout: 10_000 }));
+
+    const editorPage = await context.newPage();
+    editorPage.on('console', (m) => console.log('[editor]', m.type(), m.text()));
+    await editorPage.goto(new URL('./fixtures/editor.html', import.meta.url).href);
+
+    const editor = editorPage.locator('#editor');
+    await editor.focus();
+    // Two-paragraph text — enough to trigger full-document analysis
+    await editor.fill(
+      'This is the first paragraph about software development practices.\n\n' +
+      'This is the second paragraph discussing team collaboration.',
+    );
+    await editor.blur();
+    await editorPage.waitForTimeout(2_000);
+
+    const overlay = editorPage.locator('[data-writing-assistant="overlay"]');
+    await expect(overlay).toHaveCount(1, { timeout: 15_000 });
+    console.log('[test-11] Overlay attached');
+
+    // Wait for at least "analyzing" state to appear (analysis pipeline started)
+    await expect(overlay).toHaveAttribute('data-dot-state', /analyzing|ready|problem|improvement|none/, {
+      timeout: 30_000,
+    });
+    console.log('[test-11] Initial dot state:', await overlay.getAttribute('data-dot-state'));
+
+    // Click the "全文" button in the sidebar to explicitly request full analysis
+    const fullBtn = sidepanelPage.locator('.wa-count-btn[data-scope="full"]');
+    const fullBtnCount = await fullBtn.count();
+    if (fullBtnCount > 0) {
+      console.log('[test-11] Clicking 全文 button to trigger full analysis');
+      await fullBtn.click();
+    } else {
+      console.log('[test-11] 全文 button not found, relying on paragraph-completion trigger');
+    }
+
+    // Give the request a moment to be dispatched
+    await editorPage.waitForTimeout(1_500);
+
+    // --- KEY STEP: simulate typing DURING the full-analysis request ----------
+    // This changes the document revision so the in-flight response will not
+    // match. Before the fix this left an orphaned pending entry and the dot
+    // was stuck in "analyzing" forever.
+    console.log('[test-11] Typing mid-flight to change document revision…');
+    await editor.focus();
+    await editor.press('End');
+    await editor.type(' extra'); // triggers input → revision increment
+    await editor.blur();
+    await editorPage.waitForTimeout(1_000);
+
+    // The dot MUST eventually leave "analyzing". With the bug it never did.
+    // Allow generous time (150 s) for the LLM to respond and the session to
+    // process the stale result + recover with the new revision's analysis.
+    console.log('[test-11] Waiting for dot to exit "analyzing" (up to 150 s)…');
+    await expect(overlay).toHaveAttribute('data-dot-state', /^(?!analyzing)/, {
+      timeout: 150_000,
+    });
+    const finalState = await overlay.getAttribute('data-dot-state');
+    console.log('[test-11] Final dot state:', finalState);
+    expect(finalState).not.toBe('analyzing');
+    console.log('[test-11] PASSED — dot correctly exited analyzing after revision change mid-flight');
+  } finally {
+    await closeAll();
+  }
+});
+
+test('12. full-analysis: exact reported text', async ({}, testInfo) => {
+  test.setTimeout(120_000);
+  const executablePath =
+    testInfo.project.name === 'edge'
+      ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+      : 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+  const { context, extensionId, closeAll } = await launchWithExtension(executablePath);
+  try {
+    const sidepanelPage = await context.newPage();
+    await sidepanelPage.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await injectWritingSettings(sidepanelPage, USER_PROVIDER, WRITING_SETTINGS);
+    await sidepanelPage.locator('[data-primary-tab="writing"]').click();
+    context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker', { timeout: 10_000 }));
+
+    const editorPage = await context.newPage();
+    editorPage.on('console', (m) => console.log('[editor-12]', m.type(), m.text()));
+    editorPage.on('pageerror', (e) => console.error('[editor-error-12]', e));
+    await editorPage.goto(new URL('./fixtures/editor.html', import.meta.url).href);
+    const editor = editorPage.locator('#editor');
+    await editor.fill("This is dog, but i don;t like, I like cat.");
+    await editor.blur();
+
+    const overlay = editorPage.locator('[data-writing-assistant="overlay"]');
+    await expect(overlay).toHaveCount(1, { timeout: 15_000 });
+    const fullBtn = sidepanelPage.locator('.wa-count-btn[data-scope="full"]');
+    await expect(fullBtn).toHaveCount(1, { timeout: 15_000 });
+    await fullBtn.click();
+    await expect(overlay).toHaveAttribute('data-dot-state', /^(?!analyzing)/, { timeout: 90_000 });
+    console.log('[test-12] dot state:', await overlay.getAttribute('data-dot-state'));
+    console.log('[test-12] analysis error:', await overlay.getAttribute('data-analysis-error'));
+    console.log('[test-12] issue count:', await overlay.getAttribute('data-issue-count'));
+    console.log('[test-12] sidepanel status:', await sidepanelPage.locator('.wa-status').textContent());
+    const fullCard = sidepanelPage.locator('.wa-full-card');
+    console.log('[test-12] full card count:', await fullCard.count());
+    console.log('[test-12] full card text:', await fullCard.textContent());
+    await expect(fullCard).toHaveCount(1);
+    await expect(fullCard).toContainText('暂无全文建议');
+  } finally {
+    await closeAll();
+  }
+});
