@@ -148,14 +148,35 @@ describe('analysis transport', () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify(response) } }],
     }), { status: 200 }));
-    const transport = new OpenAITransport(provider, fetcher as typeof fetch, true, true);
+    const transport = new OpenAITransport(provider, fetcher as typeof fetch, 'auto-off', true);
     await transport.analyze({
       schemaVersion: '1', requestId: 'thinking', documentRevision: 1, targetLanguage: 'EN', units: [],
     });
     const [, init] = (fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>)[0];
     const body = JSON.parse(init.body as string);
     expect(body.chat_template_kwargs).toEqual(undefined);
-    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.thinking).toEqual(undefined);
+    expect(body.reasoning).toEqual(undefined);
+  });
+
+  it('sends the GPT-5.x no-reasoning value', async () => {
+    const response = { schemaVersion: '1', requestId: 'gpt56', documentRevision: 1, units: [] };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(response) } }],
+    }), { status: 200 }));
+    const transport = new OpenAITransport({
+      ...provider,
+      modelId: 'gpt-5.6-luna',
+    }, fetcher as typeof fetch, 'auto-off');
+
+    await expect(transport.analyze({
+      schemaVersion: '1', requestId: 'gpt56', documentRevision: 1, targetLanguage: 'EN', units: [],
+    })).resolves.toEqual(response);
+
+    const [, init] = (fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>)[0];
+    const body = JSON.parse(init.body as string);
+    expect(body.reasoning).toEqual({ effort: 'none' });
+    expect(body.reasoning_effort).toBeUndefined();
   });
 
   it('sends full-document prompts and surfaces OpenAI HTTP/JSON errors', async () => {
@@ -273,7 +294,7 @@ describe('analysis transport', () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
       candidates: [{ content: { parts: [{ functionCall: { name: 'report_writing_analysis', args: unit } }] } }],
     }), { status: 200 }));
-    const transport = new GeminiTransport({ ...provider, kind: 'gemini' }, fetcher as typeof fetch, true, true);
+    const transport = new GeminiTransport({ ...provider, kind: 'gemini' }, fetcher as typeof fetch, 'auto-off', true);
     await transport.analyze({
       schemaVersion: '1', requestId: 'gemini-thinking', documentRevision: 1, targetLanguage: 'EN', units: [],
     });

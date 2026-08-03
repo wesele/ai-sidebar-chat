@@ -150,7 +150,7 @@ describe('writing side panel', () => {
       providerId: 'p', modelId: 'm', invocationStrategy: 'parallel', maxConcurrency: 5,
        activationMode: 'panel_open', fullDocumentCharacterLimit: 1234, targetLanguage: 'EN',
        replacementFontScale: 0.7, replacementTextColor: '#123456', replacementBackgroundColor: '#abcdef80',
-       disableThinking: true, constrainedDecoding: false,
+       thinkingMode: 'auto-off', constrainedDecoding: false,
     });
   });
 

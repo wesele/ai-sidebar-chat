@@ -1,4 +1,5 @@
 import type { ApplyResultPayload, EditorViewState, TargetLanguage } from '../shared/messages';
+import { normalizeThinkingMode, type ThinkingMode } from '../shared/thinking';
 
 export interface WritingSettings {
   providerId: string;
@@ -11,7 +12,8 @@ export interface WritingSettings {
   replacementFontScale: number;
   replacementTextColor: string;
   replacementBackgroundColor: string;
-  /** Mirrors AI Tools thinking toggle: when true, disables model thinking/reasoning */
+  thinkingMode?: ThinkingMode;
+  /** Legacy setting retained for persisted configuration migration. */
   disableThinking?: boolean;
   /** When true, uses structured outputs / constrained decoding (json_schema for OpenAI, responseSchema for Gemini) */
   constrainedDecoding?: boolean;
@@ -28,7 +30,7 @@ export const defaults: WritingSettings = {
   replacementFontScale: 0.8,
   replacementTextColor: '#b85000',
   replacementBackgroundColor: '#fff3e680',
-  disableThinking: true,
+  thinkingMode: 'auto-off',
   constrainedDecoding: false,
 };
 
@@ -100,7 +102,9 @@ const waTranslations: Record<UILanguage, Record<string, string>> = {
     activationAlways: '始终激活',
     activationPanelOpen: '仅侧边栏打开时',
     activationOff: '关闭',
-    disableThinking: '关闭思考模式',
+    thinkingMode: '思考模式',
+    thinkingDefault: '默认',
+    thinkingAutoOff: '关 (Auto)',
     constrainedDecoding: '启用约束性解码',
     saveSettings: '保存配置',
     errorModalTitle: '检测失败原因',
@@ -146,7 +150,9 @@ const waTranslations: Record<UILanguage, Record<string, string>> = {
     activationAlways: 'Always',
     activationPanelOpen: 'Panel Open Only',
     activationOff: 'Off',
-    disableThinking: 'Disable Thinking',
+    thinkingMode: 'Thinking mode',
+    thinkingDefault: 'Default',
+    thinkingAutoOff: 'Off (Auto)',
     constrainedDecoding: 'Enable Constrained Decoding',
     saveSettings: 'Save Settings',
     errorModalTitle: 'Detection Failure Reason',
@@ -192,7 +198,9 @@ const waTranslations: Record<UILanguage, Record<string, string>> = {
     activationAlways: 'Siempre',
     activationPanelOpen: 'Solo panel abierto',
     activationOff: 'Desactivado',
-    disableThinking: 'Desactivar pensamiento',
+    thinkingMode: 'Modo de pensamiento',
+    thinkingDefault: 'Predeterminado',
+    thinkingAutoOff: 'Apagado (Auto)',
     constrainedDecoding: 'Habilitar decodificación restringida',
     saveSettings: 'Guardar Configuración',
     errorModalTitle: 'Razón de Falla de Detección',
@@ -293,7 +301,11 @@ export class WritingAssistantPanel {
   }
 
   setSettings(settings: Partial<WritingSettings>): void {
-    this.settings = { ...defaults, ...settings };
+    this.settings = {
+      ...defaults,
+      ...settings,
+      thinkingMode: normalizeThinkingMode(settings.thinkingMode, settings.disableThinking),
+    };
     this.render();
   }
 
@@ -840,10 +852,13 @@ export class WritingAssistantPanel {
     );
     targetLang.value = this.settings.targetLanguage ?? 'EN';
 
-    const disableThinkingCheck = document.createElement('input');
-    disableThinkingCheck.type = 'checkbox';
-    disableThinkingCheck.name = disableThinkingCheck.dataset.field = 'disableThinking';
-    disableThinkingCheck.checked = this.settings.disableThinking ?? true;
+    const thinkingMode = document.createElement('select');
+    thinkingMode.name = thinkingMode.dataset.field = 'thinkingMode';
+    thinkingMode.append(
+      new Option(this.t('thinkingDefault'), 'default'),
+      new Option(this.t('thinkingAutoOff'), 'auto-off'),
+    );
+    thinkingMode.value = normalizeThinkingMode(this.settings.thinkingMode, this.settings.disableThinking);
 
     const save = document.createElement('button');
     save.type = 'submit';
@@ -861,7 +876,7 @@ export class WritingAssistantPanel {
         replacementFontScale: this.settings.replacementFontScale,
         replacementTextColor: this.settings.replacementTextColor,
         replacementBackgroundColor: this.settings.replacementBackgroundColor,
-        disableThinking: disableThinkingCheck.checked,
+        thinkingMode: thinkingMode.value as ThinkingMode,
       };
       this.settings = next;
       void this.persist(next);
@@ -876,7 +891,7 @@ export class WritingAssistantPanel {
       this.field(this.t('maxConcurrency'), concurrency),
       this.field(this.t('characterLimit'), limit),
       this.field(this.t('activationMode'), activation),
-      this.field(this.t('disableThinking'), disableThinkingCheck),
+      this.field(this.t('thinkingMode'), thinkingMode),
       save,
     );
     this.root.append(form);
@@ -943,10 +958,13 @@ export class WritingAssistantPanel {
     limit.name = limit.dataset.field = 'fullDocumentCharacterLimit';
     limit.min = '1';
     limit.value = String(this.settings.fullDocumentCharacterLimit);
-    const dialogDisableThinking = document.createElement('input');
-    dialogDisableThinking.type = 'checkbox';
-    dialogDisableThinking.name = dialogDisableThinking.dataset.field = 'disableThinking';
-    dialogDisableThinking.checked = this.settings.disableThinking ?? true;
+    const dialogThinkingMode = document.createElement('select');
+    dialogThinkingMode.name = dialogThinkingMode.dataset.field = 'thinkingMode';
+    dialogThinkingMode.append(
+      new Option(this.t('thinkingDefault'), 'default'),
+      new Option(this.t('thinkingAutoOff'), 'auto-off'),
+    );
+    dialogThinkingMode.value = normalizeThinkingMode(this.settings.thinkingMode, this.settings.disableThinking);
     const replacementFontScale = document.createElement('input');
     replacementFontScale.type = 'number';
     replacementFontScale.name = replacementFontScale.dataset.field = 'replacementFontScale';
@@ -987,7 +1005,7 @@ export class WritingAssistantPanel {
          replacementFontScale: Math.min(2, Math.max(0.25, Number(replacementFontScale.value) || 0.8)),
          replacementTextColor: replacementTextColorControl.read(),
          replacementBackgroundColor: replacementBackgroundColorControl.read(),
-         disableThinking: dialogDisableThinking.checked,
+          thinkingMode: dialogThinkingMode.value as ThinkingMode,
         constrainedDecoding: dialogConstrainedDecoding.checked,
       };
       this.settingsOpen = false;
@@ -1004,7 +1022,7 @@ export class WritingAssistantPanel {
       replacementTextColorControl.field,
       replacementBackgroundColorControl.field,
       this.field(this.t('activationMode'), activation),
-      this.field(this.t('disableThinking'), dialogDisableThinking),
+       this.field(this.t('thinkingMode'), dialogThinkingMode),
       this.field(this.t('constrainedDecoding'), dialogConstrainedDecoding),
       save,
     );

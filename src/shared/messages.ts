@@ -4,6 +4,7 @@ import type {
   FullDocumentRequest,
   FullDocumentResponse,
 } from './schemas';
+import type { ThinkingMode } from './thinking';
 
 export interface BatchPreviewItem {
   issueId: string;
@@ -71,7 +72,9 @@ export type SettingsPayload = {
   replacementFontScale?: number;
   replacementTextColor?: string;
   replacementBackgroundColor?: string;
-  /** When true, sends thinking:disabled to OpenAI-compatible endpoints (mirrors AI Tools thinking toggle) */
+  /** Unified thinking policy. */
+  thinkingMode?: ThinkingMode;
+  /** Legacy field accepted when restoring older settings. */
   disableThinking?: boolean;
   /** When true, requests provider-side guided JSON decoding. */
   constrainedDecoding?: boolean;
@@ -139,6 +142,7 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
       (settings.replacementFontScale === undefined || (typeof settings.replacementFontScale === 'number' && Number.isFinite(settings.replacementFontScale) && settings.replacementFontScale >= 0.25 && settings.replacementFontScale <= 2)) &&
       (settings.replacementTextColor === undefined || (typeof settings.replacementTextColor === 'string' && (settings.replacementTextColor === 'transparent' || /^#[0-9a-f]{6}$/i.test(settings.replacementTextColor)))) &&
       (settings.replacementBackgroundColor === undefined || (typeof settings.replacementBackgroundColor === 'string' && (settings.replacementBackgroundColor === 'transparent' || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(settings.replacementBackgroundColor)))) &&
+      (settings.thinkingMode === undefined || settings.thinkingMode === 'default' || settings.thinkingMode === 'auto-off') &&
       (settings.disableThinking === undefined || typeof settings.disableThinking === 'boolean') &&
       (settings.constrainedDecoding === undefined || typeof settings.constrainedDecoding === 'boolean');
   }

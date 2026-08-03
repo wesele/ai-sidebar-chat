@@ -7,6 +7,7 @@ import type {
 import type { ProviderConfig } from './openai-transport';
 import { normalizeAnalysisResponse, normalizeFullDocumentResponse } from './openai-transport';
 import { fullAnalysisPrompt, unitAnalysisPrompt } from '../analysis-prompt';
+import { getGeminiThinkingPatch, type ThinkingMode } from '../../shared/thinking';
 
 // ── Gemini responseSchema definitions ───────────────────────────────────────
 
@@ -85,7 +86,7 @@ export class GeminiTransport {
   constructor(
     private readonly provider: ProviderConfig,
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
-    private readonly disableThinking = false,
+    private readonly thinkingMode: ThinkingMode | boolean = 'default',
     private readonly constrainedDecoding = false,
   ) {}
 
@@ -122,12 +123,12 @@ export class GeminiTransport {
               mode: 'AUTO',
             },
           },
-          generationConfig: { ...(this.disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}) },
+           generationConfig: (this.thinkingMode === 'auto-off' || this.thinkingMode === true) ? getGeminiThinkingPatch(this.provider.modelId).generationConfig : {},
         }
         : {
           generationConfig: {
             responseMimeType: 'application/json',
-            ...(this.disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+             ...((this.thinkingMode === 'auto-off' || this.thinkingMode === true) ? getGeminiThinkingPatch(this.provider.modelId).generationConfig : {}),
           },
         }),
     };

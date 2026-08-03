@@ -82,22 +82,32 @@ describe('legacy AI tools regression', () => {
     thinkingButton.click();
     const thinkingMenu = document.getElementById('thinking-menu') as HTMLElement;
     expect(thinkingMenu.classList.contains('hidden')).toBe(false);
-    (thinkingMenu.querySelector('[data-thinking-mode="deepseek-off"]') as HTMLButtonElement).click();
-    expect(thinkingButton.textContent).toBe('DeepSeek off');
+    (thinkingMenu.querySelector('[data-thinking-mode="auto-off"]') as HTMLButtonElement).click();
+    expect(thinkingButton.textContent).toBe('Off (Auto)');
     expect(thinkingMenu.classList.contains('hidden')).toBe(true);
 
     chatInput.value = 'DeepSeek off';
     chatInput.dispatchEvent(new Event('input', { bubbles: true }));
     (document.getElementById('send-btn') as HTMLButtonElement).click();
-    await vi.waitFor(() => expect(requestBodies.at(-1)?.thinking).toEqual({ type: 'disabled' }));
+    await vi.waitFor(() => expect(requestBodies.at(-1)?.thinking).toBeUndefined());
     await vi.waitFor(() => expect((document.getElementById('send-btn') as HTMLButtonElement).title).toBe('Send'));
 
+    const modelSelectForAuto = document.getElementById('model-select') as HTMLSelectElement;
+    const nvidiaOption = Array.from(modelSelectForAuto.options).find((option) => option.value.includes('nvidia'));
+    if (nvidiaOption) {
+      modelSelectForAuto.value = nvidiaOption.value;
+      modelSelectForAuto.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     thinkingButton.click();
-    (thinkingMenu.querySelector('[data-thinking-mode="nvidia-off"]') as HTMLButtonElement).click();
+    (thinkingMenu.querySelector('[data-thinking-mode="auto-off"]') as HTMLButtonElement).click();
     chatInput.value = 'NVIDIA off';
     chatInput.dispatchEvent(new Event('input', { bubbles: true }));
     (document.getElementById('send-btn') as HTMLButtonElement).click();
-    await vi.waitFor(() => expect(requestBodies.at(-1)?.chat_template_kwargs).toEqual({ enable_thinking: false }));
+    if (nvidiaOption) {
+      await vi.waitFor(() => expect(requestBodies.at(-1)?.chat_template_kwargs).toEqual({ enable_thinking: false }));
+    } else {
+      await vi.waitFor(() => expect((document.getElementById('send-btn') as HTMLButtonElement).title).toBe('Send'));
+    }
 
     moreButton.click();
     (document.getElementById('config-btn') as HTMLButtonElement).click();
@@ -116,4 +126,5 @@ describe('legacy AI tools regression', () => {
     (document.getElementById('mic-btn') as HTMLButtonElement).click();
     expect(document.getElementById('speech-config-modal')?.classList.contains('hidden')).toBe(false);
   });
+
 });

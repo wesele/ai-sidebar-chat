@@ -7,6 +7,7 @@ import { RequestRegistry } from './request-registry';
 import { shouldRouteToContent } from './message-router';
 import { resolveWritingProvider } from './provider-registry';
 import { publicProviders } from './provider-registry';
+import { normalizeThinkingMode } from '../shared/thinking';
 
 const runtime = chromeRuntime();
 void runtime.sidePanel.setActionBehavior?.().catch(() => undefined);
@@ -54,7 +55,7 @@ runtime.messaging.onMessage((message, sender) => {
   const tabId = sender.tab?.id;
   if (message.type === 'SETTINGS_UPDATED') {
     settingsUpdatedInThisLifetime = true;
-    settings = message.payload;
+    settings = { ...message.payload };
     void runtime.storage.set('writingAssistantSettings', settings).catch(() => undefined);
   }
   if (shouldRouteToContent(message as ExtensionMessage, tabId)) void routePanelCommand(message as ExtensionMessage);
@@ -83,7 +84,7 @@ runtime.messaging.onMessage((message, sender) => {
   if (message.type === 'PANEL_CONNECTION_CHANGED') panelOpen = message.payload.open;
 });
 
-async function provider(): Promise<OpenAITransport | GeminiTransport | undefined> { await settingsReady; const state = await runtime.storage.get<unknown>('sidebarState'); const selected = resolveWritingProvider(state, settings); return !selected ? undefined : selected.kind === 'gemini' ? new GeminiTransport(selected, undefined, settings.disableThinking, settings.constrainedDecoding) : new OpenAITransport(selected, undefined, settings.disableThinking, settings.constrainedDecoding); }
+async function provider(): Promise<OpenAITransport | GeminiTransport | undefined> { await settingsReady; const state = await runtime.storage.get<unknown>('sidebarState'); const selected = resolveWritingProvider(state, settings); const thinkingMode = normalizeThinkingMode(settings.thinkingMode, settings.disableThinking); return !selected ? undefined : selected.kind === 'gemini' ? new GeminiTransport(selected, undefined, thinkingMode, settings.constrainedDecoding) : new OpenAITransport(selected, undefined, thinkingMode, settings.constrainedDecoding); }
 const failureCode = (error: unknown): string => {
   const status = (error as { status?: number }).status;
   if (status) return `HTTP_${status}`;

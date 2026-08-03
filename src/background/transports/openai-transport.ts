@@ -6,6 +6,7 @@ import type {
   RawIssue,
 } from '../../shared/schemas';
 import { fullAnalysisPrompt, unitAnalysisPrompt } from '../analysis-prompt';
+import { getThinkingRequestPatch, type ThinkingMode } from '../../shared/thinking';
 
 export interface ProviderConfig {
   id: string;
@@ -206,7 +207,7 @@ export class OpenAITransport {
   constructor(
     private readonly provider: ProviderConfig,
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
-    private readonly disableThinking = false,
+    private readonly thinkingMode: ThinkingMode | boolean = 'default',
     private readonly constrainedDecoding = false,
   ) {}
 
@@ -232,18 +233,28 @@ export class OpenAITransport {
       model: this.provider.modelId,
       stream: false,
       max_tokens: MAX_OUTPUT_TOKENS,
-      ...(qwen || this.constrainedDecoding || this.disableThinking
+      ...(qwen || this.constrainedDecoding || this.thinkingMode === 'auto-off' || this.thinkingMode === true
         ? { response_format: { type: 'json_object' } }
         : {}),
       ...(schema ? { guided_json: schema.schema } : {}),
       messages: [{ role: 'user', content: prompt }],
       // Qwen uses the chat-template switch. The old `thinking` field is not
       // understood by vLLM and leaves a thinking request running indefinitely.
+      ...(() => {
+        const mode = typeof this.thinkingMode === 'boolean' ? (this.thinkingMode ? 'auto-off' : 'default') : this.thinkingMode;
+        const patch = getThinkingRequestPatch('openai', this.provider.modelId, mode);
+        if (typeof this.thinkingMode === 'boolean' && /qwen/i.test(this.provider.modelId)) {
+          patch.chat_template_kwargs = { enable_thinking: this.thinkingMode ? false : true };
+        }
+        return {
+           ...(patch.thinking ? { thinking: patch.thinking } : {}),
+           ...(patch.reasoning ? { reasoning: patch.reasoning } : {}),
+           ...(patch.reasoning_effort ? { reasoning_effort: patch.reasoning_effort } : {}),
+          ...(patch.chat_template_kwargs ? { chat_template_kwargs: patch.chat_template_kwargs } : {}),
+        };
+      })(),
       ...(qwen
-        ? { chat_template_kwargs: { enable_thinking: !this.disableThinking } }
-        : this.disableThinking ? { thinking: { type: 'disabled' } } : {}),
-      ...(qwen
-        ? this.disableThinking
+        ? this.thinkingMode === true
           ? { temperature: 0.7, top_p: 0.8, top_k: 20 }
           : { temperature: 0.6, top_p: 0.95, top_k: 20 }
         : {}),

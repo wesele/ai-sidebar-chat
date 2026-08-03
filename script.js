@@ -394,24 +394,15 @@ let thinkingMode = 'default';
 const THINKING_MODE_LABELS = {
   'zh-CN': {
     default: '默认',
-    'openai-off': '关OpenAI',
-    'deepseek-off': '关DeepSeek',
-    'gemini-off': '关Gemini',
-    'nvidia-off': '关NVIDIA'
+    'auto-off': '关 (Auto)'
   },
   en: {
     default: 'Default',
-    'openai-off': 'OpenAI off',
-    'deepseek-off': 'DeepSeek off',
-    'gemini-off': 'Gemini off',
-    'nvidia-off': 'NVIDIA off'
+    'auto-off': 'Off (Auto)'
   },
   es: {
     default: 'Predeterminado',
-    'openai-off': 'OpenAI apagado',
-    'deepseek-off': 'DeepSeek apagado',
-    'gemini-off': 'Gemini apagado',
-    'nvidia-off': 'NVIDIA apagado'
+    'auto-off': 'Apagado (Auto)'
   }
 };
 let showStats = true;
@@ -684,7 +675,7 @@ function closeThinkingMenu() {
 function selectThinkingMode(mode) {
   const option = els.thinkingMenu?.querySelector(`[data-thinking-mode="${mode}"]`);
   if (!option) return;
-  thinkingMode = mode;
+   thinkingMode = ['openai-off', 'deepseek-off', 'gemini-off', 'nvidia-off'].includes(mode) ? 'auto-off' : mode;
   updateThinkingButton();
   closeThinkingMenu();
 }
@@ -799,6 +790,9 @@ function renderMessageContent(msg) {
     
     // Assistant Logic
     let content = msg.content || '';
+    if (msg.reasoningContent && !content.includes('<think>')) {
+        content = `<think>${msg.reasoningContent}</think>${content}`;
+    }
     let thinkHtml = '';
     let mainContent = content;
     
@@ -941,11 +935,7 @@ async function sendMessage() {
             
             if (chunk) {
                 if (isReasoning) {
-                    if (!assistantMsg.internal_hasStartedThinking) {
-                        assistantMsg.content += "<think>";
-                        assistantMsg.internal_hasStartedThinking = true;
-                    }
-                    assistantMsg.content += chunk;
+                    assistantMsg.reasoningContent = (assistantMsg.reasoningContent || '') + chunk;
                 } else {
                     if (assistantMsg.internal_hasStartedThinking && !assistantMsg.internal_hasEndedThinking) {
                         assistantMsg.content += "</think>";
@@ -1031,9 +1021,8 @@ async function sendMessage() {
 function getOpenAIThinkingOffEffort(modelId) {
     const id = String(modelId || '').toLowerCase();
 
-    // GPT-5.1 and later support the true no-reasoning value. Older reasoning
-    // models use their lowest supported effort instead.
-    if (/^gpt-5\.[1-9]\d*(?:[-.]|$)/.test(id)) return 'none';
+    // ChatGPT models use the nested reasoning object for the no-reasoning value.
+    if (/^gpt-5\.[1-9]\d*(?:[-.]|$)/.test(id)) return null;
     if (/^gpt-5-pro(?:[-.]|$)/.test(id)) return 'high';
     if (/^gpt-5(?:[-.]|$)/.test(id)) return 'minimal';
     if (/^o[134](?:[-.]|$)/.test(id)) return 'low';
@@ -1063,24 +1052,28 @@ function getGeminiThinkingConfig(modelId) {
 }
 
 function applyOpenAIThinkingMode(body, modelId) {
-    if (thinkingMode === 'openai-off') {
-        delete body.thinking;
-        delete body.chat_template_kwargs;
+    if (thinkingMode !== 'auto-off') return;
+    const id = String(modelId || '').toLowerCase();
+    if (/qwen|nemotron|nvidia/.test(id)) {
+        if (body.chat_template_kwargs === undefined) {
+            body.chat_template_kwargs = { enable_thinking: false };
+        }
+    } else if (/deepseek/.test(id)) {
+        if (body.thinking === undefined) body.thinking = { type: 'disabled' };
+    } else {
         const effort = getOpenAIThinkingOffEffort(modelId);
-        if (effort) body.reasoning_effort = effort;
-        else delete body.reasoning_effort;
-    } else if (thinkingMode === 'deepseek-off') {
-        delete body.reasoning_effort;
-        delete body.chat_template_kwargs;
-        body.thinking = { type: 'disabled' };
-    } else if (thinkingMode === 'nvidia-off') {
-        delete body.reasoning_effort;
-        delete body.thinking;
-        body.chat_template_kwargs = {
-            ...(body.chat_template_kwargs && typeof body.chat_template_kwargs === 'object' ? body.chat_template_kwargs : {}),
-            enable_thinking: false
-        };
+        if (/^gpt-5\.[1-9]\d*(?:[-.]|$)/.test(id)) {
+            if (body.reasoning === undefined) body.reasoning = { effort: 'none' };
+        } else if (effort && body.reasoning_effort === undefined && body.reasoning === undefined) {
+            body.reasoning_effort = effort;
+        }
     }
+}
+
+function addOptionalNumber(target, key, value) {
+    if (value === null || value === undefined || String(value).trim() === '') return;
+    const number = Number(value);
+    if (Number.isFinite(number)) target[key] = number;
 }
 
 async function streamCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
@@ -1099,15 +1092,16 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
     const body = {
         model: modelId,
         messages: formattedMessages,
-        temperature: parseFloat(settings.temperature),
-        top_p: parseFloat(settings.topP),
         stream: true,
         stream_options: { include_usage: true },
         ...customParams
     };
+
+    addOptionalNumber(body, 'temperature', settings.temperature);
+    addOptionalNumber(body, 'top_p', settings.topP);
     
     if (settings.reasoningEffort) {
-        body.reasoning_effort = settings.reasoningEffort;
+        body.reasoning = { effort: settings.reasoningEffort };
     }
     
     // Default leaves the API/model in control. Vendor-specific modes apply
@@ -1133,13 +1127,15 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
+    let buffer = '';
 
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
         
         for (const line of lines) {
             if (line.startsWith('data: ')) {
@@ -1152,15 +1148,17 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
                     const reasoning = delta?.reasoning_content || '';
                     const usage = data.usage || null;
                     
-                    if (reasoning) {
-                        onChunk(reasoning, null, true);
-                    } else if (content || usage) {
-                        onChunk(content, usage, false);
-                    }
+                     if (reasoning) {
+                         onChunk(reasoning, null, true);
+                     }
+                     if (content || usage) {
+                         onChunk(content, usage, false);
+                     }
                 } catch (e) {}
             }
         }
     }
+    buffer += decoder.decode();
 }
 
 async function streamGeminiCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
@@ -1210,16 +1208,16 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
         });
     }
 
+    const generationConfig = {};
+    addOptionalNumber(generationConfig, 'temperature', settings.temperature);
+    addOptionalNumber(generationConfig, 'topP', settings.topP);
     const body = {
         contents: contents,
-        generationConfig: {
-            temperature: parseFloat(settings.temperature),
-            topP: parseFloat(settings.topP)
-        }
+        generationConfig
     };
 
     if (settings.reasoningEffort) {
-        body.reasoning_effort = settings.reasoningEffort;
+        body.reasoning = { effort: settings.reasoningEffort };
     }
 
     if (systemInstruction) {
@@ -1238,7 +1236,7 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
 
     // Gemini's thinkingConfig belongs inside generationConfig. Default leaves
     // custom parameters untouched; the explicit Gemini mode wins over them.
-    if (thinkingMode === 'gemini-off') {
+    if (thinkingMode === 'auto-off') {
         delete body.reasoning_effort;
         if (!body.generationConfig || typeof body.generationConfig !== 'object') {
             body.generationConfig = {};
@@ -1265,13 +1263,15 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
+    let buffer = '';
 
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
             if (line.startsWith('data: ')) {
@@ -1308,6 +1308,7 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
             }
         }
     }
+    buffer += decoder.decode();
 }
 
 // --- Utils ---
@@ -2285,8 +2286,8 @@ function openContextConfig() {
     els.ctxName.value = ctx.name;
     els.ctxSystem.value = ctx.systemPrompt;
     els.ctxMaxHistory.value = ctx.maxHistory;
-    els.ctxTemp.value = ctx.temperature;
-    els.ctxTopP.value = ctx.topP;
+    els.ctxTemp.value = ctx.temperature ?? '';
+    els.ctxTopP.value = ctx.topP ?? '';
     els.ctxParams.value = ctx.customParams || '{}';
     els.ctxReasoningEffort.value = ctx.reasoningEffort || '';
     
@@ -2301,8 +2302,8 @@ async function saveContextConfig() {
         ctx.name = els.ctxName.value;
         ctx.systemPrompt = els.ctxSystem.value;
         ctx.maxHistory = parseInt(els.ctxMaxHistory.value) || 0;
-        ctx.temperature = parseFloat(els.ctxTemp.value);
-        ctx.topP = parseFloat(els.ctxTopP.value);
+        ctx.temperature = els.ctxTemp.value.trim() === '' ? '' : parseFloat(els.ctxTemp.value);
+        ctx.topP = els.ctxTopP.value.trim() === '' ? '' : parseFloat(els.ctxTopP.value);
         ctx.reasoningEffort = els.ctxReasoningEffort.value.trim();
         
         try {
