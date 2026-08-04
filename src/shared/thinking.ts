@@ -9,6 +9,20 @@ export type ThinkingRequestPatch = {
   generationConfig?: { thinkingConfig: { thinkingBudget?: number; thinkingLevel?: string } };
 };
 
+export function applyThinkingRequestPatch(target: Record<string, unknown>, patch: ThinkingRequestPatch): void {
+  if (patch.reasoning !== undefined) target.reasoning = patch.reasoning;
+  if (patch.reasoning_effort !== undefined) target.reasoning_effort = patch.reasoning_effort;
+  if (patch.thinking !== undefined) target.thinking = patch.thinking;
+  if (patch.chat_template_kwargs !== undefined) target.chat_template_kwargs = patch.chat_template_kwargs;
+  if (patch.generationConfig !== undefined) {
+    const current = target.generationConfig;
+    target.generationConfig = {
+      ...(current && typeof current === 'object' ? current as Record<string, unknown> : {}),
+      ...patch.generationConfig,
+    };
+  }
+}
+
 export function normalizeThinkingMode(mode: unknown, legacyDisableThinking?: boolean): ThinkingMode {
   if (mode === 'auto-off' || mode === 'openai-off' || mode === 'deepseek-off' || mode === 'gemini-off' || mode === 'nvidia-off') {
     return 'auto-off';

@@ -389,6 +389,8 @@ let allAvailableModels = []; // Store all fetched models for filtering
 let abortController = null;
 let isGenerating = false;
 let sendCount = 0;
+import { applyThinkingRequestPatch, getThinkingRequestPatch } from './src/shared/thinking';
+
 let thinkingMode = 'default';
 
 const THINKING_MODE_LABELS = {
@@ -1018,56 +1020,10 @@ async function sendMessage() {
   }
 }
 
-function getOpenAIThinkingOffEffort(modelId) {
-    const id = String(modelId || '').toLowerCase();
-
-    // ChatGPT models use the nested reasoning object for the no-reasoning value.
-    if (/^gpt-5\.[1-9]\d*(?:[-.]|$)/.test(id)) return null;
-    if (/^gpt-5-pro(?:[-.]|$)/.test(id)) return 'high';
-    if (/^gpt-5(?:[-.]|$)/.test(id)) return 'minimal';
-    if (/^o[134](?:[-.]|$)/.test(id)) return 'low';
-
-    // Non-reasoning OpenAI models already have no reasoning phase. Omitting
-    // the parameter also keeps classic chat models and compatible endpoints
-    // from rejecting an unsupported reasoning_effort field.
-    return null;
-}
-
-function getGeminiThinkingConfig(modelId) {
-    const id = String(modelId || '').toLowerCase();
-
-    // Gemini 3 uses thinkingLevel. Pro models do not support "minimal", so
-    // low is their lowest supported level.
-    if (/^gemini-3(?:\.|-|$)/.test(id)) {
-        return { thinkingLevel: id.includes('pro') ? 'low' : 'minimal' };
-    }
-
-    // Gemini 2.5 Pro cannot disable thinking; 128 is its minimum budget.
-    if (/^gemini-2\.5(?:\.|-|$)/.test(id)) {
-        return id.includes('pro') ? { thinkingBudget: 128 } : { thinkingBudget: 0 };
-    }
-
-    // Keep the established Gemini REST shape for older/compatible models.
-    return { thinkingBudget: 0 };
-}
-
 function applyOpenAIThinkingMode(body, modelId) {
     if (thinkingMode !== 'auto-off') return;
-    const id = String(modelId || '').toLowerCase();
-    if (/qwen|nemotron|nvidia/.test(id)) {
-        if (body.chat_template_kwargs === undefined) {
-            body.chat_template_kwargs = { enable_thinking: false };
-        }
-    } else if (/deepseek/.test(id)) {
-        if (body.thinking === undefined) body.thinking = { type: 'disabled' };
-    } else {
-        const effort = getOpenAIThinkingOffEffort(modelId);
-        if (/^gpt-5\.[1-9]\d*(?:[-.]|$)/.test(id)) {
-            if (body.reasoning === undefined) body.reasoning = { effort: 'none' };
-        } else if (effort && body.reasoning_effort === undefined && body.reasoning === undefined) {
-            body.reasoning_effort = effort;
-        }
-    }
+    const patch = getThinkingRequestPatch('openai', modelId, 'auto-off');
+    applyThinkingRequestPatch(body, patch);
 }
 
 function addOptionalNumber(target, key, value) {
@@ -1241,7 +1197,8 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
         if (!body.generationConfig || typeof body.generationConfig !== 'object') {
             body.generationConfig = {};
         }
-        body.generationConfig.thinkingConfig = getGeminiThinkingConfig(modelId);
+        const patch = getThinkingRequestPatch('gemini', modelId, 'auto-off');
+        applyThinkingRequestPatch(body, patch);
     }
 
     const response = await fetch(url, {

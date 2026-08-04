@@ -233,7 +233,7 @@ export class OpenAITransport {
       model: this.provider.modelId,
       stream: false,
       max_tokens: MAX_OUTPUT_TOKENS,
-      ...(qwen || this.constrainedDecoding || this.thinkingMode === 'auto-off' || this.thinkingMode === true
+      ...(qwen || this.constrainedDecoding
         ? { response_format: { type: 'json_object' } }
         : {}),
       ...(schema ? { guided_json: schema.schema } : {}),

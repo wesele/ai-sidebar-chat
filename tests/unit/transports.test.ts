@@ -159,6 +159,28 @@ describe('analysis transport', () => {
     expect(body.reasoning).toEqual(undefined);
   });
 
+  it('does not couple auto-off to JSON response format for generic OpenAI models', async () => {
+    const response = { schemaVersion: '1', requestId: 'generic', documentRevision: 1, units: [] };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(response) } }],
+    }), { status: 200 }));
+    const transport = new OpenAITransport({
+      ...provider,
+      modelId: 'google/diffusiongemma-26b-a4b-it',
+    }, fetcher as typeof fetch, 'auto-off');
+
+    await expect(transport.analyze({
+      schemaVersion: '1', requestId: 'generic', documentRevision: 1, targetLanguage: 'EN', units: [],
+    })).resolves.toEqual(response);
+
+    const [, init] = (fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit]>)[0];
+    const body = JSON.parse(init.body as string);
+    expect(body.response_format).toBeUndefined();
+    expect(body.reasoning).toBeUndefined();
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.thinking).toBeUndefined();
+  });
+
   it('sends the GPT-5.x no-reasoning value', async () => {
     const response = { schemaVersion: '1', requestId: 'gpt56', documentRevision: 1, units: [] };
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
