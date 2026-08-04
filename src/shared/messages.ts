@@ -59,6 +59,7 @@ export interface EditorViewState {
 }
 
 export type TargetLanguage = 'EN' | 'ES' | 'CN';
+export type WritingStyle = 'practical' | 'elegant';
 
 export type SettingsPayload = {
   providerId: string;
@@ -68,6 +69,7 @@ export type SettingsPayload = {
   activationMode: 'always' | 'panel_open' | 'off';
   fullDocumentCharacterLimit: number;
   targetLanguage: TargetLanguage;
+  writingStyle?: WritingStyle;
   /** Relative font scale and colors for replacement labels rendered above the editor text. */
   replacementFontScale?: number;
   replacementTextColor?: string;
@@ -138,7 +140,8 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
       (settings.activationMode === 'always' || settings.activationMode === 'panel_open' || settings.activationMode === 'off') &&
       Number.isInteger(settings.fullDocumentCharacterLimit) &&
       (settings.fullDocumentCharacterLimit ?? 0) > 0 &&
-      (settings.targetLanguage === undefined || ['EN', 'ES', 'CN'].includes(settings.targetLanguage)) &&
+       (settings.targetLanguage === undefined || ['EN', 'ES', 'CN'].includes(settings.targetLanguage)) &&
+       (settings.writingStyle === undefined || settings.writingStyle === 'practical' || settings.writingStyle === 'elegant') &&
       (settings.replacementFontScale === undefined || (typeof settings.replacementFontScale === 'number' && Number.isFinite(settings.replacementFontScale) && settings.replacementFontScale >= 0.25 && settings.replacementFontScale <= 2)) &&
       (settings.replacementTextColor === undefined || (typeof settings.replacementTextColor === 'string' && (settings.replacementTextColor === 'transparent' || /^#[0-9a-f]{6}$/i.test(settings.replacementTextColor)))) &&
       (settings.replacementBackgroundColor === undefined || (typeof settings.replacementBackgroundColor === 'string' && (settings.replacementBackgroundColor === 'transparent' || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(settings.replacementBackgroundColor)))) &&

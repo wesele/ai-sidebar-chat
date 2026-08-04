@@ -90,4 +90,17 @@ describe('WritingSession minimized model context', () => {
     });
     session.stop();
   });
+
+  it('does not request an existing multi-paragraph document after baseline initialization', () => {
+    vi.useFakeTimers();
+    const requests: AnalysisRequest[] = [];
+    const session = sessionFor('Existing first.\n\nExisting second.', 4, requests);
+    session.start();
+    session.initializeBaseline();
+    vi.advanceTimersByTime(1500);
+    expect(requests).toHaveLength(0);
+    expect(session.viewState()?.status).toBe('analyzed');
+    session.stop();
+  });
+
 });

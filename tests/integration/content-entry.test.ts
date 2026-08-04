@@ -56,14 +56,20 @@ describe('content entry settings updates', () => {
     vi.useRealTimers();
   });
 
-  it('does not restart completed analysis when non-language settings are saved', async () => {
+  it('does not restart completed analysis when unrelated settings are saved', async () => {
     dispatch({
       v: 1,
       type: 'WRITING_MODEL_STATUS',
       correlationId: 'model-status',
       payload: { available: true },
     });
-    await vi.waitFor(() => expect(sent.some((message) => message.type === 'ANALYSIS_REQUESTED')).toBe(true));
+     dispatch({
+       v: 1,
+       type: 'SETTINGS_UPDATED',
+       correlationId: 'initial-settings',
+       payload: { ...settings, writingStyle: 'practical' },
+     });
+     await vi.waitFor(() => expect(sent.some((message) => message.type === 'ANALYSIS_REQUESTED')).toBe(true));
 
     const request = sent.find((message): message is Extract<RuntimeMessage, { type: 'ANALYSIS_REQUESTED' }> => message.type === 'ANALYSIS_REQUESTED');
     expect(request).toBeDefined();
@@ -92,13 +98,13 @@ describe('content entry settings updates', () => {
       v: 1,
       type: 'SETTINGS_UPDATED',
       correlationId: 'settings-update',
-      payload: { ...settings, targetLanguage: 'EN', invocationStrategy: 'parallel' },
+       payload: { ...settings, targetLanguage: 'EN', invocationStrategy: 'parallel', writingStyle: 'practical', replacementFontScale: 0.9 },
     });
     await Promise.resolve();
     vi.runOnlyPendingTimers();
 
-    expect(sent.filter((message) => message.type === 'ANALYSIS_REQUESTED')).toHaveLength(requestCount);
-    expect(sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED')).toHaveLength(fullCount);
+    expect(sent.filter((message) => message.type === 'ANALYSIS_REQUESTED')).toHaveLength(requestCount + 1);
+    expect(sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED')).toHaveLength(fullCount + 1);
   });
 
   it('restarts full detection immediately when the target language changes', async () => {

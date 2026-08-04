@@ -132,7 +132,8 @@ describe('writing side panel', () => {
     panel.setProviders([{ id: 'p', name: 'Provider', models: ['m'] }]);
     panel.setSettings({
       providerId: 'p', modelId: 'm', invocationStrategy: 'parallel', maxConcurrency: 5,
-      activationMode: 'panel_open', fullDocumentCharacterLimit: 1234,
+       activationMode: 'panel_open', fullDocumentCharacterLimit: 1234,
+       writingStyle: 'elegant',
       replacementFontScale: 0.7, replacementTextColor: '#123456', replacementBackgroundColor: '#abcdef',
     });
     expect(root.querySelector('h2')).toBeNull();
@@ -148,7 +149,7 @@ describe('writing side panel', () => {
       .dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
     expect(persist).toHaveBeenCalledWith({
       providerId: 'p', modelId: 'm', invocationStrategy: 'parallel', maxConcurrency: 5,
-       activationMode: 'panel_open', fullDocumentCharacterLimit: 1234, targetLanguage: 'EN',
+        activationMode: 'panel_open', fullDocumentCharacterLimit: 1234, targetLanguage: 'EN', writingStyle: 'elegant',
        replacementFontScale: 0.7, replacementTextColor: '#123456', replacementBackgroundColor: '#abcdef80',
        thinkingMode: 'auto-off', constrainedDecoding: false,
     });

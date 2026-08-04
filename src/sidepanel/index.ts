@@ -95,13 +95,9 @@ function init(): void {
     }
   });
 
-  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName === 'local' && changes.language?.newValue) {
-        panel.setLanguage(changes.language.newValue as string);
-      }
-    });
-  }
+  runtime.storage.onChanged?.((key, value) => {
+    if (key === 'language' && value) panel.setLanguage(value as string);
+  });
 
   runtime.messaging.onMessage((message, sender) => {
     if (message.type === 'EDITOR_STATE_CHANGED') {

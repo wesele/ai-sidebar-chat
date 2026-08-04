@@ -267,6 +267,23 @@ section[data-writing-settings] {
   color: #ffffff;
 }
 
+.wa-recheck-button {
+  margin-left: auto;
+  background: transparent;
+  color: var(--primary-color, #2563eb);
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wa-recheck-button:hover {
+  background: var(--primary-color, #2563eb);
+  color: #ffffff;
+}
+
 /* Modal backdrop & Error Modal */
 .wa-modal-backdrop {
   position: fixed;

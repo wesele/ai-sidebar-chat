@@ -11,6 +11,7 @@ const UNDERLINE_HEIGHT = 4;
 const UNDERLINE_STROKE_WIDTH = 1.05;
 const DEFAULT_LABEL_COLOR = '#b85000';
 const DEFAULT_LABEL_BACKGROUND = '#fff3e680';
+const DEFAULT_LABEL_FONT_FAMILY = 'Aptos';
 const MIN_SEGMENT_WIDTH = 24;
 
 export function splitAcrossRects(
@@ -54,6 +55,7 @@ export class AnnotationRenderer {
   private queuedRender?: { issues: Issue[]; rectFor: (issue: Issue) => DOMRect[] };
   private editorFontSize = 16;
   private replacementFontScale = LABEL_FONT_SCALE;
+  private editorFontFamily = DEFAULT_LABEL_FONT_FAMILY;
 
   constructor(
     private readonly onDot: () => void,
@@ -78,7 +80,7 @@ export class AnnotationRenderer {
        .under.problem{background-color:transparent;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4' viewBox='0 0 8 4'%3E%3Cpath d='M0 2 Q2 0 4 2 T8 2' fill='none' stroke='%23e57917' stroke-width='${UNDERLINE_STROKE_WIDTH}'/%3E%3C/svg%3E")}
        .under.improvement{background-color:transparent;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4' viewBox='0 0 8 4'%3E%3Cpath d='M0 2 Q2 0 4 2 T8 2' fill='none' stroke='%232878d4' stroke-width='${UNDERLINE_STROKE_WIDTH}'/%3E%3C/svg%3E")}
        .paragraph{position:fixed;width:3px}
-       .mark{font-family:sans-serif;font-size:var(--writing-label-font-size,80%);line-height:${LABEL_LINE_HEIGHT};
+       .mark{font-family:var(--writing-label-font-family,${DEFAULT_LABEL_FONT_FAMILY});font-size:var(--writing-label-font-size,80%);line-height:${LABEL_LINE_HEIGHT};
          color:var(--writing-label-color,${DEFAULT_LABEL_COLOR});background:var(--writing-label-background,${DEFAULT_LABEL_BACKGROUND});border:0;border-radius:2px;padding:${LABEL_PADDING_PX}px;white-space:normal;overflow-wrap:anywhere;max-width:calc(100vw - 16px);box-sizing:border-box;transform:translateY(calc(-100% + 5px))}
       .analyzing{box-shadow:0 0 0 0 rgba(16,185,129,.7);animation:wa-pulse 1.5s infinite}
       @keyframes wa-pulse{
@@ -104,6 +106,14 @@ export class AnnotationRenderer {
       this.editorFontSize = pixels;
       this.host.style.setProperty('--writing-label-font-size', `${pixels * this.replacementFontScale}px`);
     }
+  }
+
+  setEditorFontFamily(fontFamily: string): void {
+    this.mount();
+    const normalized = fontFamily.trim();
+    this.editorFontFamily = normalized || DEFAULT_LABEL_FONT_FAMILY;
+    this.host?.style.setProperty('--writing-label-font-family', this.editorFontFamily);
+    if (this.measure) this.measure.style.fontFamily = this.editorFontFamily;
   }
 
   setReplacementAppearance(fontScale: number, textColor: string, backgroundColor: string): void {
@@ -237,7 +247,7 @@ export class AnnotationRenderer {
   private ensureMeasure(): HTMLDivElement {
     if (this.measure) return this.measure;
     const measure = document.createElement('div');
-    measure.style.cssText = `position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;font-family:sans-serif;white-space:normal;overflow-wrap:anywhere;box-sizing:border-box;margin:0;border:0;padding:${LABEL_PADDING_PX}px`;
+     measure.style.cssText = `position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;font-family:${this.editorFontFamily};white-space:normal;overflow-wrap:anywhere;box-sizing:border-box;margin:0;border:0;padding:${LABEL_PADDING_PX}px`;
     document.documentElement.append(measure);
     this.measure = measure;
     return measure;

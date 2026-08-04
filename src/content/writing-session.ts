@@ -6,12 +6,13 @@ import type { AnalysisRequest, AnalysisResponse, FullDocumentResponse } from '..
 import { generateUUID } from '../shared/uuid';
 import type { EditorAdapter } from './adapters/editor-adapter';
 
-import type { TargetLanguage } from '../shared/messages';
+import type { TargetLanguage, WritingStyle } from '../shared/messages';
 
 export interface WritingSettings {
   hasModel: boolean;
   fullDocumentCharacterLimit: number;
   targetLanguage: TargetLanguage;
+  writingStyle?: WritingStyle;
   invocationStrategy?: 'batch' | 'parallel';
   maxConcurrency?: number;
 }
@@ -55,6 +56,27 @@ export class WritingSession {
     this.adapter.element.addEventListener('compositionend', this.onCompositionEnd);
     this.adapter.element.addEventListener('focusout', this.onFocusOut);
     document.addEventListener('selectionchange', this.onSelectionChange);
+  }
+
+  initializeBaseline(): void {
+    if (!this.cache) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = undefined;
+    this.cancelPending();
+    this.cache.status = 'analyzed';
+    this.cache.analysisRevision = this.cache.revision;
+    for (const paragraph of this.cache.paragraphs) {
+      paragraph.status = 'analyzed';
+      paragraph.analysisRevision = this.cache.revision;
+      paragraph.issue = undefined;
+      for (const sentence of paragraph.sentences) {
+        sentence.status = 'analyzed';
+        sentence.analysisRevision = this.cache.revision;
+        sentence.localIssues = [];
+        sentence.sentenceIssue = undefined;
+      }
+    }
+    this.publish(this.cache);
   }
 
   stop(): void {
@@ -114,6 +136,10 @@ export class WritingSession {
     this.publish(this.cache);
     this.dispatch(true);
     this.requestFullDoc();
+  }
+
+  recheckAll(): void {
+    this.reanalyzeAll();
   }
 
   private readonly onCompositionStart = (): void => {
@@ -226,6 +252,8 @@ export class WritingSession {
     }
     if (this.timer) clearTimeout(this.timer);
     if (!isApplying) {
+      // An edit in a long document should analyze the edited paragraph first;
+      // otherwise old quoted/history paragraphs can consume the whole batch.
       this.timer = window.setTimeout(() => this.dispatch(false), 1500);
     }
   };
@@ -340,6 +368,7 @@ export class WritingSession {
       requestId,
       documentRevision: this.cache.revision,
       targetLanguage: this.settings().targetLanguage ?? 'EN',
+      writingStyle: this.settings().writingStyle,
       units,
     });
   }

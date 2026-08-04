@@ -1,4 +1,11 @@
 import type { AnalysisRequest, FullDocumentRequest } from '../shared/schemas';
+import type { WritingStyle } from '../shared/messages';
+
+function styleInstruction(style?: WritingStyle): string {
+  return style === 'elegant'
+    ? 'Use an elegant English standard: flag imprecise, awkward, or overly casual wording when a more accurate and polished expression would materially improve the writing. Preserve the author\'s meaning and voice; do not impose ornamental wording or subjective preferences.'
+    : 'Use a practical English standard: be relatively permissive. Flag clear errors and wording that could cause misunderstanding, but accept common simplified expressions and natural everyday English when the meaning is clear. Do not flag an issue merely because a more elegant alternative exists.';
+}
 
 export function getLanguageName(uiLanguage?: string): string {
   const lang = (uiLanguage || 'zh-CN').toLowerCase();
@@ -26,12 +33,16 @@ export function unitAnalysisPrompt(request: AnalysisRequest, uiLanguage?: string
     ? `Return one JSON object matching the constrained schema with schemaVersion "1", the same requestId/documentRevision, and one flat "issues" array covering all units.`
     : `Return JSON only: {"schemaVersion":"1","requestId":"...","documentRevision":1,"issues":[{"unitId":"...","original":"...","replacement":"...","reason":"...","category":"spelling|grammar|word_choice|non_english|clarity|style|coherence|tone|other"}]}.`;
   return `Analyze only the target units as a ${targetLangName} writing tutor. Context is read-only.
+${styleInstruction(request.writingStyle)}
 ${returnInstruction}
 The response envelope is not an example: copy schemaVersion, requestId, and documentRevision exactly from REQUEST. Never default documentRevision to 1.
 For every issue you report:
 - "unitId" must be the exact unitId of the unit the error is in, copied from the request.
 - "original" must be the exact substring copied character-for-character from the unit text — the precise span that is wrong. It must exist verbatim in the text.
 - "replacement" must be non-empty, plain text, and differ from original.
+- Use the smallest natural span that fixes the error. Prefer a single word, contraction, short phrase, or the minimum necessary adjacent words; do not replace an entire sentence when a local replacement can express the fix.
+- Preserve all correct text outside that span exactly. For example, for "Gave you the right to manage?" report "Gave" -> "Who gave" (not a rewritten sentence), and for "What the problem with you?" report "What" -> "What's" when that is the local fix.
+- A sentence-length original is allowed only when the entire sentence is in the wrong language or when the problem genuinely cannot be repaired by a local span without changing the sentence structure. Do not use a sentence-length replacement merely to make wording smoother.
 - "reason" must be brief and educational, written in ${langName}.
 Do NOT return character offsets, scopes, or severity — the client derives those.
 Never flag or alter URLs, email, code, variables, or proper-name protected spans. Preserve meaning, facts, tone, and formatting. A short non-${targetLangName} phrase can be an issue; a complete non-${targetLangName} sentence is also an issue. For every issue with category "non_english", "replacement" must translate the exact "original" span into ${targetLangName}; do not repeat, transliterate, or explain the original instead of translating it. For a complete non-${targetLangName} sentence, copy the entire sentence as "original" and provide its full ${targetLangName} translation as "replacement".
@@ -46,7 +57,7 @@ export function fullAnalysisPrompt(request: FullDocumentRequest, uiLanguage?: st
   const returnInstruction = useTool
     ? `Return one JSON object matching the constrained schema using the same requestId and documentRevision.`
     : `Return JSON only: {"schemaVersion":"1","requestId":"...","documentRevision":1,"severity":"none|improvement|problem","summary":"one short sentence or empty when severity is none","suggestions":[{"severity":"improvement|problem","title":"short actionable recommendation","reason":"brief impact or change needed"}]} using the same requestId and documentRevision. All fields must be concise plain text.`;
-  return `Review this ${targetLangName} document at the macro level only. Return only important, actionable suggestions. Focus exclusively on:
+  return `Review this ${targetLangName} document at the macro level only. ${styleInstruction(request.writingStyle)} Return only important, actionable suggestions. Focus exclusively on:
 1. Writing intent — is the overall purpose of the document clear and consistent?
 2. Overall fluency — does the text read naturally as a whole (not sentence-by-sentence grammar)?
 3. Logical coherence — do the ideas flow logically? Are there structural contradictions or missing transitions between major sections?

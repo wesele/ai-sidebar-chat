@@ -1,4 +1,4 @@
-import type { ApplyResultPayload, EditorViewState, TargetLanguage } from '../shared/messages';
+import type { ApplyResultPayload, EditorViewState, TargetLanguage, WritingStyle } from '../shared/messages';
 import { normalizeThinkingMode, type ThinkingMode } from '../shared/thinking';
 
 export interface WritingSettings {
@@ -9,6 +9,7 @@ export interface WritingSettings {
   activationMode: 'always' | 'panel_open' | 'off';
   fullDocumentCharacterLimit: number;
   targetLanguage: TargetLanguage;
+  writingStyle: WritingStyle;
   replacementFontScale: number;
   replacementTextColor: string;
   replacementBackgroundColor: string;
@@ -27,6 +28,7 @@ export const defaults: WritingSettings = {
   activationMode: 'always',
   fullDocumentCharacterLimit: 20_000,
   targetLanguage: 'EN',
+  writingStyle: 'practical',
   replacementFontScale: 0.8,
   replacementTextColor: '#b85000',
   replacementBackgroundColor: '#fff3e680',
@@ -73,6 +75,9 @@ const waTranslations: Record<UILanguage, Record<string, string>> = {
     clickToViewError: '点击查看具体错误信息',
     retry: '重试',
     targetLang: '写作语言',
+    writingStyle: '检测风格',
+    practicalStyle: '实用',
+    elegantStyle: '优雅',
     settings: '配置',
     model: '模型',
     issueCounts: '问题计数',
@@ -121,6 +126,9 @@ const waTranslations: Record<UILanguage, Record<string, string>> = {
     clickToViewError: 'Click to view error details',
     retry: 'Retry',
     targetLang: 'Target Language',
+    writingStyle: 'Detection Style',
+    practicalStyle: 'Practical',
+    elegantStyle: 'Elegant',
     settings: 'Settings',
     model: 'Model',
     issueCounts: 'Issue Counts',
@@ -169,6 +177,9 @@ const waTranslations: Record<UILanguage, Record<string, string>> = {
     clickToViewError: 'Haz clic para ver los detalles del error',
     retry: 'Reintentar',
     targetLang: 'Idioma de escritura',
+    writingStyle: 'Estilo de detección',
+    practicalStyle: 'Práctico',
+    elegantStyle: 'Elegante',
     settings: 'Configuración',
     model: 'Modelo',
     issueCounts: 'Conteo de problemas',
@@ -518,6 +529,14 @@ export class WritingAssistantPanel {
       }
       const statusText = document.createTextNode(statusLabel);
       status.append(statusDot, statusText);
+      if (state?.status === 'analyzed' && !state.noModel) {
+        const recheckBtn = this.button(this.uiLanguage === 'en' ? 'Recheck' : this.uiLanguage === 'es' ? 'Revisar' : '重新检测', () => {
+          if (this.tabId !== undefined) this.command('RETRY_DETECTION', { tabId: this.tabId });
+        });
+        recheckBtn.className = 'wa-recheck-button';
+        recheckBtn.dataset.writingRecheckButton = 'true';
+        status.append(recheckBtn);
+      }
     }
     const actions = document.createElement('div');
     actions.className = 'wa-actions';
@@ -872,7 +891,8 @@ export class WritingAssistantPanel {
         maxConcurrency: Math.max(1, Math.min(6, Number(concurrency.value) || 3)),
         activationMode: activation.value as WritingSettings['activationMode'],
         fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
-        targetLanguage: targetLang.value as TargetLanguage,
+         targetLanguage: targetLang.value as TargetLanguage,
+         writingStyle: this.settings.writingStyle,
         replacementFontScale: this.settings.replacementFontScale,
         replacementTextColor: this.settings.replacementTextColor,
         replacementBackgroundColor: this.settings.replacementBackgroundColor,
@@ -934,6 +954,10 @@ export class WritingAssistantPanel {
       new Option('CN (Chinese)', 'CN'),
     );
     dialogTargetLang.value = this.settings.targetLanguage ?? 'EN';
+    const writingStyle = document.createElement('select');
+    writingStyle.name = writingStyle.dataset.field = 'writingStyle';
+    writingStyle.append(new Option(this.t('practicalStyle'), 'practical'), new Option(this.t('elegantStyle'), 'elegant'));
+    writingStyle.value = this.settings.writingStyle ?? 'practical';
 
     const strategy = document.createElement('select');
     strategy.name = strategy.dataset.field = 'invocationStrategy';
@@ -1001,7 +1025,8 @@ export class WritingAssistantPanel {
         maxConcurrency: Math.max(1, Math.min(6, Number(concurrency.value) || 3)),
         activationMode: activation.value as WritingSettings['activationMode'],
          fullDocumentCharacterLimit: Math.max(1, Number(limit.value) || 20_000),
-         targetLanguage: dialogTargetLang.value as TargetLanguage,
+          targetLanguage: dialogTargetLang.value as TargetLanguage,
+          writingStyle: writingStyle.value as WritingStyle,
          replacementFontScale: Math.min(2, Math.max(0.25, Number(replacementFontScale.value) || 0.8)),
          replacementTextColor: replacementTextColorControl.read(),
          replacementBackgroundColor: replacementBackgroundColorControl.read(),
@@ -1015,6 +1040,7 @@ export class WritingAssistantPanel {
     });
     form.append(
       this.field(this.t('targetLang'), dialogTargetLang),
+      this.field(this.t('writingStyle'), writingStyle),
       this.field(this.t('invocationStrategy'), strategy),
       this.field(this.t('maxConcurrency'), concurrency),
       this.field(this.t('characterLimit'), limit),

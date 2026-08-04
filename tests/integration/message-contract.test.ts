@@ -7,7 +7,7 @@ describe('message contract', () => {
     expect(isExtensionMessage({ v: 1, type: 'APPLY_ALL', correlationId: 'x', payload: { ...payload, scope: 'oops' } })).toBe(false);
     expect(isExtensionMessage({ v: 2, type: 'APPLY_ALL', correlationId: 'x', payload })).toBe(false);
   });
-  it('validates bounded writing settings', () => { const payload = { providerId: 'p', modelId: 'm', invocationStrategy: 'parallel' as const, maxConcurrency: 3, activationMode: 'always' as const, fullDocumentCharacterLimit: 20000 }; expect(isExtensionMessage({ v: 1, type: 'SETTINGS_UPDATED', correlationId: 'x', payload })).toBe(true); expect(isExtensionMessage({ v: 1, type: 'SETTINGS_UPDATED', correlationId: 'x', payload: { ...payload, maxConcurrency: 7 } })).toBe(false); });
+  it('validates bounded writing settings', () => { const payload = { providerId: 'p', modelId: 'm', invocationStrategy: 'parallel' as const, maxConcurrency: 3, activationMode: 'always' as const, fullDocumentCharacterLimit: 20000, writingStyle: 'practical' as const }; expect(isExtensionMessage({ v: 1, type: 'SETTINGS_UPDATED', correlationId: 'x', payload })).toBe(true); expect(isExtensionMessage({ v: 1, type: 'SETTINGS_UPDATED', correlationId: 'x', payload: { ...payload, writingStyle: 'strict' as never } })).toBe(false); expect(isExtensionMessage({ v: 1, type: 'SETTINGS_UPDATED', correlationId: 'x', payload: { ...payload, maxConcurrency: 7 } })).toBe(false); });
   it('validates non-negative batch application results', () => {
     expect(isExtensionMessage({
       v: 1, type: 'APPLY_RESULT', correlationId: 'x',

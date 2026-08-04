@@ -1,5 +1,5 @@
 import { chromeRuntime } from '../shared/browser-runtime';
-import type { RuntimeMessage } from '../shared/messages';
+import type { RuntimeMessage, WritingStyle } from '../shared/messages';
 import { generateUUID } from '../shared/uuid';
 import { ActivationController } from './activation-controller';
 import { applyAllForSession } from './apply-command';
@@ -29,6 +29,7 @@ let settings = {
   invocationStrategy: 'batch' as 'batch' | 'parallel',
   maxConcurrency: 3,
   targetLanguage: 'EN' as TargetLanguage,
+  writingStyle: 'practical' as WritingStyle,
   replacementFontScale: 0.8,
   replacementTextColor: '#b85000',
   replacementBackgroundColor: '#fff3e680',
@@ -70,7 +71,9 @@ const start = (): void => {
     }),
     (issueId) => session?.applyIssue(issueId),
   );
-  renderer.setEditorFontSize(getComputedStyle(adapter.element).fontSize);
+  const editorStyle = getComputedStyle(adapter.element);
+  renderer.setEditorFontSize(editorStyle.fontSize);
+  renderer.setEditorFontFamily(editorStyle.fontFamily);
   renderer.setReplacementAppearance(
     settings.replacementFontScale,
     settings.replacementTextColor,
@@ -111,7 +114,7 @@ const start = (): void => {
       v: 1,
       type: 'FULL_ANALYSIS_REQUESTED',
       correlationId: requestId,
-      payload: { schemaVersion: '1', requestId, documentRevision: revision, text, targetLanguage: settings.targetLanguage ?? 'EN' },
+       payload: { schemaVersion: '1', requestId, documentRevision: revision, text, targetLanguage: settings.targetLanguage ?? 'EN', writingStyle: settings.writingStyle },
     }),
     (requestId) => send({
       v: 1,
@@ -124,11 +127,13 @@ const start = (): void => {
       hasModel: settings.hasModel,
       fullDocumentCharacterLimit: settings.fullDocumentCharacterLimit,
       targetLanguage: settings.targetLanguage ?? 'EN',
+      writingStyle: settings.writingStyle,
       invocationStrategy: settings.invocationStrategy,
       maxConcurrency: settings.maxConcurrency,
     }),
   );
   session.start();
+  session.initializeBaseline();
 
   let frame = 0;
   const refreshGeometry = (): void => {
@@ -165,7 +170,8 @@ void runtime.storage
     fullDocumentCharacterLimit?: number;
     invocationStrategy?: 'batch' | 'parallel';
      maxConcurrency?: number;
-     targetLanguage?: TargetLanguage;
+      targetLanguage?: TargetLanguage;
+      writingStyle?: WritingStyle;
      replacementFontScale?: number;
      replacementTextColor?: string;
      replacementBackgroundColor?: string;
@@ -178,6 +184,7 @@ void runtime.storage
       invocationStrategy: saved?.invocationStrategy ?? 'batch',
       maxConcurrency: saved?.maxConcurrency ?? 3,
       targetLanguage: saved?.targetLanguage ?? 'EN',
+      writingStyle: saved?.writingStyle ?? 'practical',
       replacementFontScale: saved?.replacementFontScale ?? 0.8,
       replacementTextColor: saved?.replacementTextColor ?? '#b85000',
       replacementBackgroundColor: saved?.replacementBackgroundColor ?? '#fff3e680',
@@ -210,7 +217,7 @@ runtime.messaging.onMessage((message) => {
         settings.replacementTextColor,
         settings.replacementBackgroundColor,
       );
-      if (message.payload.targetLanguage !== undefined && message.payload.targetLanguage !== previousTargetLanguage) {
+       if ((message.payload.targetLanguage !== undefined && message.payload.targetLanguage !== previousTargetLanguage) || message.payload.writingStyle !== undefined) {
         session?.reanalyzeAll();
       }
       start();
@@ -227,7 +234,8 @@ runtime.messaging.onMessage((message) => {
     document.querySelector<HTMLElement>('[data-writing-assistant="overlay"]')
       ?.setAttribute('data-analysis-error', message.payload.code);
   } else if (message.type === 'RETRY_DETECTION') {
-    session?.retry();
+    if (session?.viewState()?.status === 'error') session.retry();
+    else session?.recheckAll();
   } else if (message.type === 'REQUEST_FULL_ANALYSIS') {
     session?.requestFullDoc();
   } else if (message.type === 'APPLY_ALL') {

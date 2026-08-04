@@ -195,4 +195,25 @@ describe('WritingSession races', () => {
     session.stop();
     vi.useRealTimers();
   });
+
+  it('recheckAll forces a full unit analysis', () => {
+    vi.useFakeTimers();
+    const text = 'First paragraph.\n\nSecond paragraph.';
+    const requests: Array<{ units: Array<{ unitType: string }> }> = [];
+    const adapter = {
+      element: document.createElement('textarea'), kind: 'textarea',
+      readSnapshot: () => createSnapshot({ editorId: 'e', documentRevision: 1, sourceKind: 'textarea', source: text, selection: { start: text.length, end: text.length }, composing: false, createdAt: 0 }),
+      getCaretGeometry: () => null, getRangeGeometry: () => [],
+      replaceRanges: () => ({ applied: 0, skipped: 0 }), observe: () => () => undefined,
+    } as unknown as EditorAdapter;
+    const session = new WritingSession(adapter, (request) => requests.push(request), () => undefined, () => undefined, () => undefined, () => ({ hasModel: true, fullDocumentCharacterLimit: 20_000, targetLanguage: 'EN' }));
+    session.start();
+    session.initializeBaseline();
+    session.recheckAll();
+    expect(requests).toHaveLength(1);
+    expect(requests[0].units.some((unit) => unit.unitType === 'paragraph')).toBe(true);
+    session.stop();
+    vi.useRealTimers();
+  });
+
 });

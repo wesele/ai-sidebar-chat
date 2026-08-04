@@ -118,6 +118,22 @@ describe('AnnotationRenderer local issue', () => {
     expect(host.style.getPropertyValue('--writing-label-background')).toBe('#abcdef80');
   });
 
+  it('uses the editor font family for labels and measurement, with Aptos fallback', () => {
+    const renderer = new AnnotationRenderer(vi.fn(), vi.fn());
+    renderer.setEditorFontFamily('"Source Sans 3", sans-serif');
+    const host = document.querySelector<HTMLElement>('[data-writing-assistant="overlay"]')!;
+    expect(host.style.getPropertyValue('--writing-label-font-family')).toBe('"Source Sans 3", sans-serif');
+    renderer.render([issue], () => [new DOMRect(25, 35, 60, 18)]);
+    const measure = document.documentElement.querySelector<HTMLDivElement>('div[style*="left: -10000px"]');
+    expect(measure?.style.fontFamily).toBe('Aptos');
+
+    renderer.clear();
+    const fallbackRenderer = new AnnotationRenderer(vi.fn(), vi.fn());
+    fallbackRenderer.setEditorFontFamily('');
+    const fallbackHost = document.querySelector<HTMLElement>('[data-writing-assistant="overlay"]')!;
+    expect(fallbackHost.style.getPropertyValue('--writing-label-font-family')).toBe('Aptos');
+  });
+
   it('renders the latest issue set when updates arrive in the same frame', () => {
     let frame: FrameRequestCallback | undefined;
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
