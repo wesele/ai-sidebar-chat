@@ -9,11 +9,12 @@
 </head>
 <body class="gemini-theme">
   <header id="top-nav-bar" class="top-nav-bar">
+    <button id="api-config-btn" class="api-config-btn" title="API配置" aria-label="API配置"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
     <nav id="primary-tabs" aria-label="主导航">
       <button type="button" data-primary-tab="writing" role="tab" aria-selected="false">写作助手</button>
       <button type="button" data-primary-tab="tools" role="tab" aria-selected="true">AI 工具箱</button>
     </nav>
-    <button id="language-btn" class="language-btn" title="选择语言">🌐</button>
+    <button id="language-btn" class="language-btn" title="选择语言" aria-label="选择语言"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg></button>
   </header>
   <main id="writing-assistant-panel" role="tabpanel" hidden></main>
   <div id="app-container">
@@ -47,7 +48,6 @@
         <div id="more-menu-wrap" class="more-menu-wrap">
           <button id="more-btn" class="text-btn" type="button" aria-haspopup="menu" aria-expanded="false">更多</button>
           <div id="more-menu" class="more-menu hidden" role="menu" aria-label="更多操作">
-            <button id="config-btn" class="more-menu-item" type="button" role="menuitem">API配置</button>
             <button id="stats-toggle-btn" class="more-menu-item on" type="button" role="menuitem" title="显示时间/速度指标">时间指标</button>
             <button id="align-toggle-btn" class="more-menu-item" type="button" role="menuitem" title="消息对齐方式">对齐</button>
             <button id="clear-btn" class="more-menu-item" type="button" role="menuitem" title="清空当前上下文消息">清空</button>
@@ -82,7 +82,6 @@
            <div id="providers-list">
              <!-- List items -->
            </div>
-           <button id="add-provider-btn" class="secondary-btn full-width">添加供应商</button>
         </div>
         <div class="api-details">
            <div id="provider-form">
@@ -91,11 +90,15 @@
            </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button id="export-models-btn" class="secondary-btn">导出模型配置</button>
-        <input type="file" id="import-models-file" style="display:none" accept=".json">
-        <button id="import-models-btn" class="secondary-btn">导入模型配置</button>
-        <button id="save-api-config-btn" class="primary-btn">保存当前修改</button>
+      <div class="modal-footer api-footer">
+        <div class="api-footer-left">
+          <button id="add-provider-btn" class="secondary-btn">添加供应商</button>
+          <button id="delete-provider-btn" class="secondary-btn danger-btn" hidden>删除此供应商</button>
+          <button id="export-models-btn" class="secondary-btn">导出模型配置</button>
+          <input type="file" id="import-models-file" style="display:none" accept=".json">
+          <button id="import-models-btn" class="secondary-btn">导入模型配置</button>
+        </div>
+        <button id="save-api-config-btn" class="primary-btn">保存</button>
       </div>
     </div>
   </div>

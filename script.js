@@ -222,6 +222,7 @@ const translations = {
     alignment: 'Alineación',
     selectModel: 'Seleccionar modelo...',
     thinkingToggle: 'Modo de pensamiento (haz clic para elegir)',
+    save: 'Guardar',
     send: 'Enviar',
     startRecording: 'Entrada de voz',
     stopRecording: 'Detener grabación',
@@ -258,8 +259,8 @@ function applyTranslations() {
     els.moreBtn.textContent = t('more');
   }
 
-  // Config button
-  if (els.configBtn) els.configBtn.textContent = t('apiConfig');
+  // Config button (top-left, symmetric with language button)
+  if (els.configBtn) els.configBtn.title = t('apiConfig');
   
   // Model select placeholder
   if (els.modelSelect && els.modelSelect.querySelector('option')) {
@@ -306,7 +307,7 @@ function applyTranslations() {
   var apiSidebarHeader = document.querySelector('#api-config-modal .sidebar-header');
   if (apiSidebarHeader) apiSidebarHeader.textContent = t('providersList');
   if (els.addProviderBtn) els.addProviderBtn.textContent = t('addProvider');
-  if (els.saveApiBtn) els.saveApiBtn.textContent = t('saveCurrentChanges');
+  if (els.saveApiBtn) els.saveApiBtn.textContent = t('save');
   if (els.exportModelsBtn) els.exportModelsBtn.textContent = t('exportModelConfig');
   if (els.importModelsBtn) els.importModelsBtn.textContent = t('importModelConfig');
   var apiEmptyState = document.querySelector('#api-config-modal .empty-state');
@@ -437,7 +438,7 @@ const els = {
   alignToggleBtn: document.getElementById('align-toggle-btn'),
   moreBtn: document.getElementById('more-btn'),
   moreMenu: document.getElementById('more-menu'),
-  configBtn: document.getElementById('config-btn'),
+  configBtn: document.getElementById('api-config-btn'),
   clearBtn: document.getElementById('clear-btn'),
   addContextBtn: document.getElementById('add-context-btn'),
   languageBtn: document.getElementById('language-btn'),
@@ -452,6 +453,7 @@ const els = {
   // API Config Elements
   providersList: document.getElementById('providers-list'),
   addProviderBtn: document.getElementById('add-provider-btn'),
+  deleteProviderBtn: document.getElementById('delete-provider-btn'),
   saveApiBtn: document.getElementById('save-api-config-btn'),
   providerForm: document.getElementById('provider-form'),
   exportModelsBtn: document.getElementById('export-models-btn'),
@@ -1867,6 +1869,7 @@ function renderProviderForm() {
     const p = tempProviders.find(tp => tp.id === currentEditingProviderId);
     if (!p) {
         els.providerForm.innerHTML = '<div class="empty-state">请选择左侧供应商进行编辑</div>';
+        if (els.deleteProviderBtn) els.deleteProviderBtn.hidden = true;
         return;
     }
     
@@ -1932,9 +1935,11 @@ function renderProviderForm() {
     
     formHtml += `
         </div>
-        ${!isDefault && !isBuiltin ? '<button class="danger-text" id="delete-provider-btn">删除此供应商</button>' : ''}
     `;
-    
+
+    // Delete lives in the footer next to Add; show it only for deletable providers.
+    if (els.deleteProviderBtn) els.deleteProviderBtn.hidden = isDefault || isBuiltin;
+
     els.providerForm.innerHTML = formHtml;
 
     const nameInput = document.getElementById('p-edit-name');
@@ -2037,14 +2042,16 @@ function renderProviderForm() {
     }
     keyInput.addEventListener('input', updateHandler);
 
-    if (!isDefault && !isBuiltin && document.getElementById('delete-provider-btn')) {
-        document.getElementById('delete-provider-btn').addEventListener('click', () => {
+    if (!isDefault && !isBuiltin && els.deleteProviderBtn) {
+        els.deleteProviderBtn.onclick = () => {
+            const current = tempProviders.find(tp => tp.id === currentEditingProviderId);
+            if (!current || current.id === 'default-local' || current.isBuiltin === true) return;
             if(confirm(t('confirmDeleteProvider'))) {
-                tempProviders = tempProviders.filter(tp => tp.id !== p.id);
+                tempProviders = tempProviders.filter(tp => tp.id !== current.id);
                 currentEditingProviderId = tempProviders[0]?.id || null;
                 renderApiConfigUI();
             }
-        });
+        };
     }
 }
 

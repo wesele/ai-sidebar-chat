@@ -17,6 +17,14 @@
   z-index: 10;
 }
 
+.top-nav-bar .api-config-btn {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+}
+
 #primary-tabs {
   display: inline-flex;
   align-self: center;

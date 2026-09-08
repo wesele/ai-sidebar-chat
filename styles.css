@@ -173,7 +173,7 @@ body {
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12);
 }
 
-#add-context-btn, .language-btn {
+#add-context-btn, .language-btn, .api-config-btn {
   background: var(--panel-bg, #ffffff);
   border: 1px solid var(--border-color, #e2e8f0);
   border-radius: 9999px;
@@ -190,14 +190,30 @@ body {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
-#add-context-btn:hover, .language-btn:hover {
+#add-context-btn:hover, .language-btn:hover, .api-config-btn:hover {
   background: var(--hover-bg, #f8fafc);
   border-color: #cbd5e1;
   color: var(--text-color, #1e293b);
 }
 
-.language-btn {
-  font-size: 14px;
+.language-btn,
+.api-config-btn {
+  font-size: 0;
+}
+
+.language-btn svg,
+.api-config-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.api-config-btn svg {
+  transition: transform 0.3s ease;
+}
+
+.api-config-btn:hover svg {
+  transform: rotate(30deg);
 }
 
 /* ==========================================
@@ -863,6 +879,108 @@ body {
   gap: 8px;
 }
 
+/* API config footer: provider actions left, save right on one row */
+.modal-footer.api-footer {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.api-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.api-footer-left .secondary-btn {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.api-footer #save-api-config-btn {
+  margin-left: auto;
+  flex: none;
+}
+
+/* Compact provider form: leave more room for the model list */
+#api-config-modal .api-details {
+  padding: 14px 16px;
+}
+
+#api-config-modal .form-group {
+  margin-bottom: 10px;
+}
+
+#api-config-modal .form-group label {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+#api-config-modal .form-group input[type="text"],
+#api-config-modal .form-group input[type="number"],
+#api-config-modal .form-group input[type="password"],
+#api-config-modal .form-group textarea,
+#api-config-modal .form-group select {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+#api-config-modal .models-list {
+  max-height: 260px;
+}
+
+/* Model list absorbs leftover vertical space instead of leaving a gap */
+#api-config-modal #provider-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+#api-config-modal .form-group:has(> .models-list) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+#api-config-modal .form-group:has(> .models-list) .models-list {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 110px;
+  overflow-y: auto;
+}
+
+/* Label-left / control-right rows for provider params */
+#api-config-modal .form-group:has(> :is(input[type="text"], input[type="password"], select, .password-input-wrapper)) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#api-config-modal .form-group:has(> :is(input[type="text"], input[type="password"], select, .password-input-wrapper)) > label {
+  flex: 0 0 72px;
+  margin-bottom: 0;
+}
+
+#api-config-modal .form-group:has(> :is(input[type="text"], input[type="password"], select, .password-input-wrapper)) > :is(input[type="text"], input[type="password"], select, .password-input-wrapper) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#api-config-modal #p-add-model-input,
+#api-config-modal #add-model-btn,
+#api-config-modal #test-fetch-btn {
+  height: 32px !important;
+}
+
+#api-config-modal #p-add-model-input {
+  min-width: 0;
+}
+
 .form-group {
   margin-bottom: 16px;
 }
@@ -955,7 +1073,7 @@ input[type="checkbox"] {
 }
 
 .api-sidebar {
-  width: 200px;
+  width: 144px;
   border-right: 1px solid var(--border-color);
   background: var(--sidebar-bg);
   display: flex;
@@ -964,7 +1082,7 @@ input[type="checkbox"] {
 }
 
 .sidebar-header {
-  padding: 14px 16px;
+  padding: 12px;
   font-family: var(--font-main);
   font-weight: 600;
   font-size: 12px;
@@ -972,6 +1090,9 @@ input[type="checkbox"] {
   border-bottom: 1px solid var(--border-color);
   letter-spacing: 0.03em;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #providers-list {
@@ -980,9 +1101,9 @@ input[type="checkbox"] {
 }
 
 .provider-list-item {
-  padding: 12px 16px;
+  padding: 10px 12px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--secondary-text-color);
   border-bottom: 1px solid var(--border-color);
@@ -1011,25 +1132,6 @@ input[type="checkbox"] {
   background: var(--panel-bg);
 }
 
-.full-width {
-  width: 100%;
-  border: none;
-  border-top: 1px solid var(--border-color);
-  border-radius: 0;
-  padding: 12px;
-  background: transparent;
-  color: var(--primary-color);
-  font-family: var(--font-main);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.full-width:hover {
-  background: var(--hover-bg);
-}
-
 .empty-state {
   text-align: center;
   color: var(--secondary-text-color);
@@ -1037,24 +1139,15 @@ input[type="checkbox"] {
   font-size: 14px;
 }
 
-.danger-text {
+.danger-btn {
   color: var(--danger-color);
-  font-family: var(--font-main);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
   background: var(--danger-bg);
   border: 1px solid var(--danger-color);
-  border-radius: 10px;
-  padding: 8px 16px;
-  width: 100%;
-  text-align: center;
-  margin-top: 12px;
-  transition: all 0.2s ease;
 }
 
-.danger-text:hover {
+.danger-btn:hover {
   background: var(--danger-color);
+  border-color: var(--danger-color);
   color: #ffffff;
 }
 

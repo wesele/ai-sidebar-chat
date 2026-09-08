@@ -55,6 +55,9 @@ describe('legacy AI tools regression', () => {
     const langBtn = document.getElementById('language-btn') as HTMLButtonElement;
     expect(langBtn.closest('#top-nav-bar')).not.toBeNull();
     expect(document.querySelector('#top-nav-bar #primary-tabs')).not.toBeNull();
+    const apiConfigBtn = document.getElementById('api-config-btn') as HTMLButtonElement;
+    expect(apiConfigBtn.closest('#top-nav-bar')).not.toBeNull();
+    expect(document.getElementById('config-btn')).toBeNull();
 
     langBtn.click();
     expect(document.getElementById('language-modal')?.classList.contains('hidden')).toBe(false);
@@ -110,7 +113,7 @@ describe('legacy AI tools regression', () => {
     }
 
     moreButton.click();
-    (document.getElementById('config-btn') as HTMLButtonElement).click();
+    (document.getElementById('api-config-btn') as HTMLButtonElement).click();
     expect(document.getElementById('api-config-modal')?.classList.contains('hidden')).toBe(false);
     (document.getElementById('add-provider-btn') as HTMLButtonElement).click();
     const name = document.getElementById('p-edit-name') as HTMLInputElement;
