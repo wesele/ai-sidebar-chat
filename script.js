@@ -490,10 +490,12 @@ async function init() {
   await loadState();
   await loadLanguage();
   await loadMessageAlign();
+  await loadThinkingMode();
   applyTranslations();
   updateStatsButton();
   updateAlignButton();
   updateMessageAlignment();
+  updateThinkingButton();
   renderContextBar();
   updateModelSelect();
   
@@ -676,12 +678,24 @@ function closeThinkingMenu() {
   els.thinkingToggleBtn.setAttribute('aria-expanded', 'false');
 }
 
+async function loadThinkingMode() {
+  const result = await chrome.storage.local.get(['sidebarThinkingMode']);
+  if (result.sidebarThinkingMode) {
+    thinkingMode = result.sidebarThinkingMode;
+  }
+}
+
+async function saveThinkingMode() {
+  await chrome.storage.local.set({ sidebarThinkingMode: thinkingMode });
+}
+
 function selectThinkingMode(mode) {
   const option = els.thinkingMenu?.querySelector(`[data-thinking-mode="${mode}"]`);
   if (!option) return;
    thinkingMode = ['openai-off', 'deepseek-off', 'gemini-off', 'nvidia-off'].includes(mode) ? 'auto-off' : mode;
-  updateThinkingButton();
-  closeThinkingMenu();
+   updateThinkingButton();
+   closeThinkingMenu();
+   saveThinkingMode();
 }
 
 function updateThinkingButton() {
