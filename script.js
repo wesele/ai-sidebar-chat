@@ -264,7 +264,7 @@ function applyTranslations() {
   
   // Model select placeholder
   if (els.modelSelect && els.modelSelect.querySelector('option')) {
-    els.modelSelect.querySelector('option').textContent = t('selectModel');
+    updateModelSelect();
   }
   
   // Thinking toggle
@@ -432,6 +432,9 @@ const els = {
   imagePreviewContainer: document.getElementById('image-preview-container'),
   micBtn: document.getElementById('mic-btn'),
   modelSelect: document.getElementById('model-select'),
+  modelSelectBtn: document.getElementById('model-select-btn'),
+  modelSelectLabel: document.getElementById('model-select-label'),
+  modelSelectMenu: document.getElementById('model-select-menu'),
   thinkingToggleBtn: document.getElementById('thinking-toggle-btn'),
   thinkingMenu: document.getElementById('thinking-menu'),
   statsToggleBtn: document.getElementById('stats-toggle-btn'),
@@ -600,13 +603,15 @@ function switchContext(id) {
     renderMessages(ctx.messages);
     updateModelSelect();
     const modelVal = `${ctx.modelProviderId}|${ctx.modelId}`;
+    const matchedModel = Array.from(els.modelSelect.options).find(opt => opt.value === modelVal);
     
-    if (els.modelSelect.querySelector(`option[value="${modelVal}"]`)) {
+    if (matchedModel) {
         els.modelSelect.value = modelVal;
     } else {
         els.modelSelect.selectedIndex = 0;
         updateCurrentContextModel();
     }
+    syncModelSelectUI();
   }
 }
 
@@ -733,6 +738,7 @@ function updateStatsButton() {
 
 function setMoreMenuOpen(open) {
   if (!els.moreMenu || !els.moreBtn) return;
+  if (open) closeModelMenu();
   els.moreMenu.classList.toggle('hidden', !open);
   els.moreBtn.setAttribute('aria-expanded', String(open));
 }
@@ -1695,9 +1701,20 @@ els.chatInput.addEventListener('keydown', (e) => {
         }
     });
     
-    els.modelSelect.addEventListener('change', updateCurrentContextModel);
+    els.modelSelect.addEventListener('change', () => {
+        updateCurrentContextModel();
+        syncModelSelectUI();
+    });
+    els.modelSelectBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setModelMenuOpen(els.modelSelectMenu.classList.contains('hidden'));
+    });
+    els.modelSelectMenu.addEventListener('click', (event) => {
+        event.stopPropagation();
+    });
     els.thinkingToggleBtn.addEventListener('click', (event) => {
         event.stopPropagation();
+        closeModelMenu();
         const isHidden = els.thinkingMenu.classList.contains('hidden');
         els.thinkingMenu.classList.toggle('hidden', !isHidden);
         els.thinkingToggleBtn.setAttribute('aria-expanded', String(isHidden));
@@ -1726,9 +1743,13 @@ els.chatInput.addEventListener('keydown', (e) => {
     document.addEventListener('click', () => {
         els.contextMenu.classList.add('hidden');
         setMoreMenuOpen(false);
+        closeModelMenu();
     });
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') setMoreMenuOpen(false);
+        if (event.key === 'Escape') {
+            setMoreMenuOpen(false);
+            closeModelMenu();
+        }
     });
     
     document.querySelectorAll('.close-modal-btn').forEach(btn => {
@@ -2227,23 +2248,109 @@ async function saveApiConfig() {
 
 function updateModelSelect() {
     const currentVal = els.modelSelect.value;
-    els.modelSelect.innerHTML = '<option value="" disabled selected>选择模型...</option>';
+    els.modelSelect.innerHTML = `<option value="" disabled selected>${t('selectModel')}</option>`;
     
+    if (els.modelSelectMenu) {
+        els.modelSelectMenu.innerHTML = '';
+    }
+
+    let hasItems = false;
     state.providers.forEach(p => {
+        if (!p.models || p.models.length === 0) return;
+
         const group = document.createElement('optgroup');
         group.label = p.name;
+
+        if (els.modelSelectMenu) {
+            const groupLabel = document.createElement('div');
+            groupLabel.className = 'model-select-group-label';
+            groupLabel.textContent = p.name;
+            els.modelSelectMenu.appendChild(groupLabel);
+        }
+
         p.models.forEach(m => {
+            const value = `${p.id}|${m}`;
             const opt = document.createElement('option');
-            opt.value = `${p.id}|${m}`;
+            opt.value = value;
             opt.textContent = m;
             group.appendChild(opt);
+
+            if (els.modelSelectMenu) {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'model-select-item';
+                item.setAttribute('role', 'option');
+                item.dataset.value = value;
+
+                const name = document.createElement('span');
+                name.className = 'model-select-item-name';
+                name.textContent = m;
+                item.appendChild(name);
+
+                item.insertAdjacentHTML('beforeend', '<svg class="model-select-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>');
+
+                item.addEventListener('click', () => selectModelOption(value));
+                els.modelSelectMenu.appendChild(item);
+            }
+
+            hasItems = true;
         });
+
         els.modelSelect.appendChild(group);
     });
+
+    if (els.modelSelectMenu && !hasItems) {
+        const empty = document.createElement('div');
+        empty.className = 'model-select-empty';
+        empty.textContent = t('selectModel');
+        els.modelSelectMenu.appendChild(empty);
+    }
     
-    if (currentVal && els.modelSelect.querySelector(`option[value="${currentVal}"]`)) {
+    const matched = Array.from(els.modelSelect.options).find(opt => opt.value === currentVal);
+    if (matched) {
         els.modelSelect.value = currentVal;
     }
+
+    syncModelSelectUI();
+}
+
+function selectModelOption(value) {
+    const option = Array.from(els.modelSelect.options).find(opt => opt.value === value);
+    if (!option) return;
+    els.modelSelect.value = value;
+    updateCurrentContextModel();
+    syncModelSelectUI();
+    closeModelMenu();
+}
+
+function syncModelSelectUI() {
+    if (!els.modelSelectBtn || !els.modelSelectMenu) return;
+    const currentVal = els.modelSelect.value;
+    const option = Array.from(els.modelSelect.options).find(opt => opt.value === currentVal);
+    const label = option ? option.textContent : t('selectModel');
+
+    if (els.modelSelectLabel) els.modelSelectLabel.textContent = label;
+    els.modelSelectBtn.title = label;
+
+    els.modelSelectMenu.querySelectorAll('.model-select-item').forEach(item => {
+        item.setAttribute('aria-selected', String(item.dataset.value === currentVal));
+    });
+}
+
+function closeModelMenu() {
+    if (!els.modelSelectMenu || !els.modelSelectBtn) return;
+    els.modelSelectMenu.classList.add('hidden');
+    els.modelSelectBtn.setAttribute('aria-expanded', 'false');
+}
+
+function setModelMenuOpen(open) {
+    if (!els.modelSelectMenu || !els.modelSelectBtn) return;
+    if (open) {
+        closeThinkingMenu();
+        setMoreMenuOpen(false);
+    }
+    els.modelSelectMenu.classList.toggle('hidden', !open);
+    els.modelSelectBtn.setAttribute('aria-expanded', String(open));
 }
 
 // --- Context Config UI ---

@@ -35,9 +35,16 @@
     <!-- Bottom Input Area -->
     <div id="input-area-wrapper">
       <div id="input-controls">
-        <select id="model-select">
-          <option value="" disabled selected>选择模型...</option>
-        </select>
+        <div id="model-select-control" class="model-select-control">
+          <button id="model-select-btn" class="model-select-btn" type="button" aria-haspopup="listbox" aria-expanded="false" title="选择模型">
+            <span id="model-select-label" class="model-select-label">选择模型...</span>
+            <svg class="model-select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div id="model-select-menu" class="model-select-menu hidden" role="listbox" aria-label="模型选项"></div>
+          <select id="model-select" class="model-select-native" tabindex="-1" aria-hidden="true">
+            <option value="" disabled selected>选择模型...</option>
+          </select>
+        </div>
         <div id="thinking-control" class="thinking-control">
           <button id="thinking-toggle-btn" class="toggle-btn default" type="button" aria-haspopup="menu" aria-expanded="false" title="思考模式（点击选择）">默认</button>
           <div id="thinking-menu" class="thinking-menu hidden" role="menu" aria-label="思考模式选项">
