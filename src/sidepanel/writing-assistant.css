@@ -97,16 +97,17 @@
 }
 
 .wa-lang-select {
-  background: var(--secondary-bg-color, #1a1a1a);
+  background-color: var(--secondary-bg-color, #1a1a1a);
   border: 1px solid var(--border-color, #444444);
   border-radius: 6px;
   color: var(--text-color, #ffffff);
   font-size: 12px;
   font-weight: 600;
-  padding: 4px 6px;
+  padding: 4px 22px 4px 8px;
+  background-position: right 6px center;
   outline: none;
   cursor: pointer;
-  transition: border-color 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 .wa-lang-select:hover,
@@ -187,6 +188,27 @@ section[data-writing-settings] {
   white-space: nowrap;
 }
 
+.wa-model-select-control {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.wa-model-select-btn {
+  background: var(--secondary-bg-color, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  color: var(--text-color, #1e293b);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 5px 10px;
+}
+
+.wa-model-select-btn:hover {
+  background: var(--hover-bg, #f1f5f9);
+  border-color: #cbd5e1;
+}
+
 .wa-model-select {
   flex: 1;
   min-width: 0;
@@ -196,7 +218,7 @@ section[data-writing-settings] {
   color: var(--text-color, #1e293b);
   font-size: 13px;
   font-weight: 500;
-  padding: 5px 10px;
+  padding: 5px 28px 5px 10px;
   outline: none;
   cursor: pointer;
   text-overflow: ellipsis;
@@ -796,9 +818,21 @@ section[data-batch-preview] button:nth-last-child(2):hover {
   color: var(--secondary-text-color, #aaaaaa);
 }
 
-#writing-assistant-panel form select,
 #writing-assistant-panel form input {
   padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--secondary-bg-color, #1e1e1e);
+  border: 1px solid var(--border-color, #444444);
+  color: var(--text-color, #ffffff);
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+#writing-assistant-panel form select {
+  padding: 8px 28px 8px 10px;
+  background-position: right 10px center;
   border-radius: 6px;
   background: var(--secondary-bg-color, #1e1e1e);
   border: 1px solid var(--border-color, #444444);

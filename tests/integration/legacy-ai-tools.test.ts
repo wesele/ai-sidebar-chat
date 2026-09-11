@@ -137,6 +137,20 @@ describe('legacy AI tools regression', () => {
 
     (document.getElementById('mic-btn') as HTMLButtonElement).click();
     expect(document.getElementById('speech-config-modal')?.classList.contains('hidden')).toBe(false);
+
+    const fakeFile = new File(['fake-png-content'], 'test-paste.png', { type: 'image/png' });
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true }) as any;
+    pasteEvent.clipboardData = {
+      items: [{ kind: 'file', type: 'image/png', getAsFile: () => fakeFile }],
+      files: [fakeFile],
+      getData: (format: string) => (format === 'text/plain' ? '' : ''),
+    };
+    chatInput.dispatchEvent(pasteEvent);
+    await vi.waitFor(() => {
+      const preview = document.getElementById('image-preview-container');
+      expect(preview?.classList.contains('hidden')).toBe(false);
+      expect(preview?.querySelectorAll('.image-preview-item').length).toBeGreaterThan(0);
+    });
   });
 
 });

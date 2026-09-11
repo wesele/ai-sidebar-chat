@@ -575,11 +575,62 @@ body {
   color: var(--text-color, #1e293b);
 }
 
+/* Global unified select style matching AI tools dropdown */
+select:not(.model-select-native) {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  font-family: var(--font-main);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background-color: var(--panel-bg, #ffffff);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px 12px;
+  color: var(--text-color, #1e293b);
+  padding: 6px 26px 6px 10px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+select:not(.model-select-native):hover {
+  background-color: var(--hover-bg, #f8fafc);
+  border-color: #cbd5e1;
+  color: var(--text-color, #1e293b);
+}
+
+select:not(.model-select-native):focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+select:not(.model-select-native):disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background-color: var(--bg-color);
+}
+
+select:not(.model-select-native) option {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
 .model-select-control {
   position: relative;
   flex: 1;
   min-width: 0;
-  max-width: 160px;
+  max-width: 320px;
+}
+
+.model-select-control.direction-down .model-select-menu {
+  bottom: auto;
+  top: calc(100% + 6px);
+  max-height: min(650px, calc(100vh - 90px));
 }
 
 .model-select-native {
@@ -621,7 +672,7 @@ body {
   bottom: calc(100% + 6px);
   z-index: 20;
   width: max(180px, 100%);
-  max-height: 260px;
+  max-height: min(650px, calc(100vh - 120px));
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 4px;
@@ -637,12 +688,18 @@ body {
 
 .model-select-group-label {
   padding: 6px 8px 3px;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--secondary-text-color);
-  opacity: 0.7;
+  color: #000000;
+  opacity: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  .model-select-group-label {
+    color: #ffffff;
+  }
 }
 
 .model-select-item {
@@ -805,39 +862,38 @@ body {
   opacity: 0.6;
 }
 
-#image-btn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 6px;
-  font-size: 18px;
-  opacity: 0.6;
-  transition: all 0.2s ease;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-#image-btn:hover {
-  opacity: 1;
-  background: var(--hover-bg);
-}
-
+#image-btn,
 #mic-btn {
-  background: transparent;
-  border: none;
+  background: var(--panel-bg, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 9999px;
+  width: 32px;
+  height: 32px;
   cursor: pointer;
-  padding: 6px;
-  font-size: 18px;
-  opacity: 0.6;
-  transition: all 0.2s ease;
-  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--secondary-text-color, #64748b);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   position: relative;
+  padding: 0;
 }
 
+#image-btn:hover,
 #mic-btn:hover {
-  opacity: 1;
-  background: var(--hover-bg);
+  background: var(--hover-bg, #f8fafc);
+  border-color: #cbd5e1;
+  color: var(--text-color, #1e293b);
+}
+
+#image-btn svg,
+#mic-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  pointer-events: none;
 }
 
 #mic-btn.recording {
@@ -1040,9 +1096,13 @@ body {
 #api-config-modal .form-group input[type="text"],
 #api-config-modal .form-group input[type="number"],
 #api-config-modal .form-group input[type="password"],
-#api-config-modal .form-group textarea,
-#api-config-modal .form-group select:not(.model-thinking-select) {
+#api-config-modal .form-group textarea {
   padding: 7px 10px;
+  font-size: 13px;
+}
+
+#api-config-modal .form-group select:not(.model-thinking-select) {
+  padding: 7px 28px 7px 10px;
   font-size: 13px;
 }
 
@@ -1115,8 +1175,7 @@ body {
 .form-group input[type="text"],
 .form-group input[type="number"],
 .form-group input[type="password"],
-.form-group textarea,
-.form-group select:not(.model-thinking-select) {
+.form-group textarea {
   width: 100%;
   padding: 10px 12px;
   background: var(--bg-color);
@@ -1127,6 +1186,14 @@ body {
   color: var(--text-color);
   outline: none;
   transition: border-color 0.15s ease;
+}
+
+.form-group select:not(.model-thinking-select) {
+  width: 100%;
+  padding: 9px 32px 9px 12px;
+  background-position: right 12px center;
+  border-radius: 10px;
+  font-size: 13px;
 }
 
 .form-group input:focus,
@@ -1327,7 +1394,8 @@ input[type="checkbox"] {
   width: auto;
   min-width: 120px;
   height: 28px;
-  padding: 2px 8px;
+  padding: 2px 24px 2px 8px;
+  background-position: right 6px center;
   font-size: 12px;
   line-height: normal;
   box-sizing: border-box;

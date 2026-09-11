@@ -1692,6 +1692,44 @@ els.chatInput.addEventListener('keydown', (e) => {
     historyBeforeNavigation = '';
   }
 });
+
+    els.chatInput.addEventListener('paste', async (e) => {
+        const clipboardData = e.clipboardData;
+        if (!clipboardData) return;
+
+        const items = Array.from(clipboardData.items || []);
+        const imageFiles = [];
+
+        for (const item of items) {
+            if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                if (file) imageFiles.push(file);
+            }
+        }
+
+        if (imageFiles.length === 0 && clipboardData.files && clipboardData.files.length > 0) {
+            for (const file of Array.from(clipboardData.files)) {
+                if (file.type && file.type.startsWith('image/')) {
+                    imageFiles.push(file);
+                }
+            }
+        }
+
+        if (imageFiles.length > 0) {
+            for (const file of imageFiles) {
+                const base64 = await fileToBase64(file);
+                selectedImages.push({
+                    name: file.name || `image_${Date.now()}.png`,
+                    type: file.type || 'image/png',
+                    data: base64
+                });
+            }
+            renderImagePreviews();
+            if (!clipboardData.getData('text/plain')) {
+                e.preventDefault();
+            }
+        }
+    });
     
     els.sendBtn.addEventListener('click', () => {
         if (isGenerating && abortController) {
@@ -2405,6 +2443,9 @@ function setModelMenuOpen(open) {
     if (open) {
         closeThinkingMenu();
         setMoreMenuOpen(false);
+        const rect = els.modelSelectBtn.getBoundingClientRect();
+        const availableHeight = Math.max(160, Math.floor(rect.top - 12));
+        els.modelSelectMenu.style.maxHeight = `${availableHeight}px`;
     }
     els.modelSelectMenu.classList.toggle('hidden', !open);
     els.modelSelectBtn.setAttribute('aria-expanded', String(open));

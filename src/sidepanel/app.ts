@@ -583,34 +583,166 @@ export class WritingAssistantPanel {
     modelBar.className = 'wa-model-bar';
     const label = document.createElement('label');
     label.textContent = this.t('model');
+
+    const modelControl = document.createElement('div');
+    modelControl.className = 'model-select-control wa-model-select-control direction-down';
+
+    const modelBtn = document.createElement('button');
+    modelBtn.type = 'button';
+    modelBtn.className = 'model-select-btn wa-model-select-btn';
+    modelBtn.setAttribute('aria-haspopup', 'listbox');
+    modelBtn.setAttribute('aria-expanded', 'false');
+    modelBtn.title = this.t('model');
+
+    const modelLabel = document.createElement('span');
+    modelLabel.className = 'model-select-label';
+    modelBtn.append(modelLabel);
+
+    modelBtn.insertAdjacentHTML(
+      'beforeend',
+      '<svg class="model-select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>'
+    );
+
+    const modelMenu = document.createElement('div');
+    modelMenu.className = 'model-select-menu hidden';
+    modelMenu.setAttribute('role', 'listbox');
+    modelMenu.setAttribute('aria-label', this.t('model'));
+
     const topModelSelect = document.createElement('select');
-    topModelSelect.className = 'wa-model-select';
+    topModelSelect.className = 'wa-model-select model-select-native';
+    topModelSelect.tabIndex = -1;
+    topModelSelect.setAttribute('aria-hidden', 'true');
 
     const currentProvider = activeProviders.find((p) => p.id === this.settings.providerId) ?? activeProviders[0];
+    let hasItems = false;
     for (const provider of activeProviders) {
+      if (!provider.models || provider.models.length === 0) continue;
       const group = document.createElement('optgroup');
       group.label = provider.name;
+
+      const groupLabel = document.createElement('div');
+      groupLabel.className = 'model-select-group-label';
+      groupLabel.textContent = provider.name;
+      modelMenu.append(groupLabel);
+
       for (const modelId of provider.models) {
+        const value = `${provider.id}|${modelId}`;
         const option = document.createElement('option');
-        option.value = `${provider.id}|${modelId}`;
+        option.value = value;
         option.textContent = modelId;
         group.append(option);
+
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'model-select-item';
+        item.setAttribute('role', 'option');
+        item.dataset.value = value;
+
+        const name = document.createElement('span');
+        name.className = 'model-select-item-name';
+        name.textContent = modelId;
+        item.append(name);
+
+        item.insertAdjacentHTML(
+          'beforeend',
+          '<svg class="model-select-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+        );
+
+        item.addEventListener('click', (event) => {
+          event.stopPropagation();
+          selectModel(value);
+        });
+
+        modelMenu.append(item);
+        hasItems = true;
       }
       topModelSelect.append(group);
     }
+
+    if (!hasItems) {
+      const empty = document.createElement('div');
+      empty.className = 'model-select-empty';
+      empty.textContent = this.t('model');
+      modelMenu.append(empty);
+    }
+
+    const syncModelUI = () => {
+      const currentVal = topModelSelect.value;
+      const option = Array.from(topModelSelect.options).find((opt) => opt.value === currentVal);
+      const text = option ? option.textContent ?? '' : this.t('model');
+      modelLabel.textContent = text;
+      modelBtn.title = text;
+      modelMenu.querySelectorAll<HTMLElement>('.model-select-item').forEach((item) => {
+        item.setAttribute('aria-selected', String(item.dataset.value === currentVal));
+      });
+    };
+
+    const closeMenu = () => {
+      modelMenu.classList.add('hidden');
+      modelBtn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', onDocClick);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+
+    const openMenu = () => {
+      const rect = modelBtn.getBoundingClientRect();
+      const availableHeight = Math.max(160, Math.floor(window.innerHeight - rect.bottom - 12));
+      modelMenu.style.maxHeight = `${availableHeight}px`;
+      modelMenu.classList.remove('hidden');
+      modelBtn.setAttribute('aria-expanded', 'true');
+      document.addEventListener('click', onDocClick);
+      document.addEventListener('keydown', onKeyDown);
+    };
+
+    const onDocClick = (e: MouseEvent) => {
+      if (!modelControl.contains(e.target as Node)) {
+        closeMenu();
+      }
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeMenu();
+      }
+    };
+
+    modelBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const isOpen = !modelMenu.classList.contains('hidden');
+      if (isOpen) {
+        closeMenu();
+      } else {
+        openMenu();
+      }
+    });
+
+    const selectModel = (value: string) => {
+      if (topModelSelect.value !== value) {
+        topModelSelect.value = value;
+        topModelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      syncModelUI();
+      closeMenu();
+    };
+
     const currentValue = currentProvider ? `${currentProvider.id}|${this.settings.modelId}` : '';
     if (Array.from(topModelSelect.options).some((option) => option.value === currentValue)) {
       topModelSelect.value = currentValue;
     } else if (topModelSelect.options.length) {
       topModelSelect.value = topModelSelect.options[0].value;
     }
+
     topModelSelect.addEventListener('change', () => {
       const [providerId, ...modelParts] = topModelSelect.value.split('|');
       const nextSettings: WritingSettings = { ...this.settings, providerId, modelId: modelParts.join('|') };
       this.settings = nextSettings;
+      syncModelUI();
       void this.persist(nextSettings);
     });
-    modelBar.append(label, topModelSelect, actions);
+
+    syncModelUI();
+    modelControl.append(modelBtn, modelMenu, topModelSelect);
+    modelBar.append(label, modelControl, actions);
 
     // 1. Model selection should be at the very top
     this.root.append(modelBar);
