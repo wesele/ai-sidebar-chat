@@ -1,5 +1,6 @@
 export type ThinkingMode = 'default' | 'auto-off';
 export type ThinkingApiType = 'openai' | 'gemini';
+export type ThinkingType = 'auto' | 'openai' | 'deepseek' | 'qwen' | 'gemini' | 'none';
 
 export type ThinkingRequestPatch = {
   reasoning?: { effort: string };
@@ -55,7 +56,32 @@ export function getGeminiThinkingPatch(modelId: string): ThinkingRequestPatch {
   return { generationConfig: { thinkingConfig: { thinkingBudget: 0 } } };
 }
 
-export function getThinkingRequestPatch(apiType: ThinkingApiType, modelId: string, mode: ThinkingMode): ThinkingRequestPatch {
+export function getThinkingRequestPatch(
+  apiType: ThinkingApiType,
+  modelId: string,
+  mode: ThinkingMode,
+  thinkingType: ThinkingType = 'auto',
+): ThinkingRequestPatch {
   if (mode !== 'auto-off') return {};
-  return apiType === 'gemini' ? getGeminiThinkingPatch(modelId) : getOpenAIThinkingPatch(modelId);
+
+  switch (thinkingType) {
+    case 'none':
+      return {};
+    case 'deepseek':
+      return { thinking: { type: 'disabled' } };
+    case 'qwen':
+      return { chat_template_kwargs: { enable_thinking: false } };
+    case 'gemini':
+      return getGeminiThinkingPatch(modelId);
+    case 'openai': {
+      const patch = getOpenAIThinkingPatch(modelId);
+      if (patch.reasoning !== undefined || patch.reasoning_effort !== undefined) {
+        return patch;
+      }
+      return { reasoning: { effort: 'none' } };
+    }
+    case 'auto':
+    default:
+      return apiType === 'gemini' ? getGeminiThinkingPatch(modelId) : getOpenAIThinkingPatch(modelId);
+  }
 }

@@ -1041,7 +1041,7 @@ body {
 #api-config-modal .form-group input[type="number"],
 #api-config-modal .form-group input[type="password"],
 #api-config-modal .form-group textarea,
-#api-config-modal .form-group select {
+#api-config-modal .form-group select:not(.model-thinking-select) {
   padding: 7px 10px;
   font-size: 13px;
 }
@@ -1116,7 +1116,7 @@ body {
 .form-group input[type="number"],
 .form-group input[type="password"],
 .form-group textarea,
-.form-group select {
+.form-group select:not(.model-thinking-select) {
   width: 100%;
   padding: 10px 12px;
   background: var(--bg-color);
@@ -1131,7 +1131,7 @@ body {
 
 .form-group input:focus,
 .form-group textarea:focus,
-.form-group select:focus {
+.form-group select:not(.model-thinking-select):focus {
   border-color: var(--primary-color);
 }
 
@@ -1282,9 +1282,10 @@ input[type="checkbox"] {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border-color);
   transition: background 0.15s ease;
+  gap: 10px;
 }
 
 .model-item:last-child {
@@ -1300,6 +1301,48 @@ input[type="checkbox"] {
   color: var(--text-color);
   font-family: var(--font-code);
   word-break: break-all;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.model-thinking-label {
+  font-size: 12px;
+  color: var(--secondary-text-color);
+  user-select: none;
+  white-space: nowrap;
+}
+
+#api-config-modal .model-item .model-thinking-select,
+.model-thinking-select {
+  width: auto;
+  min-width: 120px;
+  height: 28px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: normal;
+  box-sizing: border-box;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--input-bg);
+  color: var(--text-color);
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+}
+
+#api-config-modal .model-item .model-thinking-select:focus,
+.model-thinking-select:focus {
+  border-color: var(--primary-color);
 }
 
 .delete-model-btn {

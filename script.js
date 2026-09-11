@@ -107,6 +107,15 @@ const translations = {
     modelsList: 'Model List',
     addModelPlaceholder: 'Add model...',
     noModels: 'No models',
+    deleteModel: 'Delete model',
+    thinkingLabel: 'Thinking:',
+    thinkingType: 'Thinking parameter type',
+    thinkingTypeAuto: 'Auto',
+    thinkingTypeOpenAI: 'OpenAI',
+    thinkingTypeDeepSeek: 'DeepSeek',
+    thinkingTypeQwen: 'Qwen / Template',
+    thinkingTypeGemini: 'Gemini',
+    thinkingTypeNone: 'None',
     edit: 'Edit',
     delete: 'Delete',
     selectLanguage: 'Select Language',
@@ -181,6 +190,15 @@ const translations = {
     modelsList: '模型列表',
     addModelPlaceholder: '添加模型...',
     noModels: '暂无模型',
+    deleteModel: '删除模型',
+    thinkingLabel: '思考:',
+    thinkingType: 'Thinking 参数类型',
+    thinkingTypeAuto: '自动',
+    thinkingTypeOpenAI: 'OpenAI',
+    thinkingTypeDeepSeek: 'DeepSeek',
+    thinkingTypeQwen: 'Qwen / 模板',
+    thinkingTypeGemini: 'Gemini',
+    thinkingTypeNone: '无 (None)',
     edit: '编辑',
     delete: '删除',
     selectLanguage: '选择语言',
@@ -209,6 +227,18 @@ const translations = {
     providerName: 'Nombre del Proveedor',
     unnamedProvider: 'Proveedor sin Nombre',
     deleteProvider: 'Eliminar este proveedor',
+    modelsList: 'Lista de Modelos',
+    addModelPlaceholder: 'Añadir modelo...',
+    noModels: 'Sin modelos',
+    deleteModel: 'Eliminar modelo',
+    thinkingLabel: 'Thinking:',
+    thinkingType: 'Tipo de parámetro Thinking',
+    thinkingTypeAuto: 'Automático',
+    thinkingTypeOpenAI: 'OpenAI',
+    thinkingTypeDeepSeek: 'DeepSeek',
+    thinkingTypeQwen: 'Qwen / Plantilla',
+    thinkingTypeGemini: 'Gemini',
+    thinkingTypeNone: 'Ninguno',
     copy: 'Copiar',
     copied: '¡Copiado!',
     copyMainContent: 'Copiar contenido principal',
@@ -1042,9 +1072,9 @@ async function sendMessage() {
   }
 }
 
-function applyOpenAIThinkingMode(body, modelId) {
+function applyOpenAIThinkingMode(body, modelId, thinkingType = 'auto') {
     if (thinkingMode !== 'auto-off') return;
-    const patch = getThinkingRequestPatch('openai', modelId, 'auto-off');
+    const patch = getThinkingRequestPatch('openai', modelId, 'auto-off', thinkingType);
     applyThinkingRequestPatch(body, patch);
 }
 
@@ -1055,10 +1085,11 @@ function addOptionalNumber(target, key, value) {
 }
 
 async function streamCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
-    const apiType = provider.apiType || 'openai';
+    const apiType = provider?.apiType || 'openai';
+    const thinkingType = provider?.modelThinkingTypes?.[modelId] || 'auto';
     
     if (apiType === 'gemini') {
-        return streamGeminiCompletion(provider, modelId, messages, settings, customParams, onChunk, signal);
+        return streamGeminiCompletion(provider, modelId, messages, settings, customParams, onChunk, signal, thinkingType);
     }
     
     // --- OpenAI-compatible path ---
@@ -1084,7 +1115,7 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
     
     // Default leaves the API/model in control. Vendor-specific modes apply
     // their native OpenAI-compatible request parameters.
-    applyOpenAIThinkingMode(body, modelId);
+    applyOpenAIThinkingMode(body, modelId, thinkingType);
 
     const response = await fetch(url, {
         method: 'POST',
@@ -1139,7 +1170,7 @@ async function streamCompletion(provider, modelId, messages, settings, customPar
     buffer += decoder.decode();
 }
 
-async function streamGeminiCompletion(provider, modelId, messages, settings, customParams, onChunk, signal) {
+async function streamGeminiCompletion(provider, modelId, messages, settings, customParams, onChunk, signal, thinkingType = 'auto') {
     // Normalize baseUrl for Gemini
     let rawUrl = provider.baseUrl;
     if (!rawUrl || rawUrl === 'https://api.openai.com/v1') {
@@ -1216,11 +1247,13 @@ async function streamGeminiCompletion(provider, modelId, messages, settings, cus
     // custom parameters untouched; the explicit Gemini mode wins over them.
     if (thinkingMode === 'auto-off') {
         delete body.reasoning_effort;
-        if (!body.generationConfig || typeof body.generationConfig !== 'object') {
-            body.generationConfig = {};
+        const patch = getThinkingRequestPatch('gemini', modelId, 'auto-off', thinkingType);
+        if (Object.keys(patch).length > 0) {
+            if (!body.generationConfig || typeof body.generationConfig !== 'object') {
+                body.generationConfig = {};
+            }
+            applyThinkingRequestPatch(body, patch);
         }
-        const patch = getThinkingRequestPatch('gemini', modelId, 'auto-off');
-        applyThinkingRequestPatch(body, patch);
     }
 
     const response = await fetch(url, {
@@ -1868,28 +1901,51 @@ function renderModelsList(provider) {
     }
     
     const isBuiltin = provider.isBuiltin === true;
+    if (!provider.modelThinkingTypes) {
+        provider.modelThinkingTypes = {};
+    }
     
     provider.models.forEach(model => {
         const modelItem = document.createElement('div');
         modelItem.className = 'model-item';
         
-        if (isBuiltin) {
-            // Builtin provider models are readonly
-            modelItem.innerHTML = `
-                <span class="model-name">${escapeHtml(model)}</span>
-            `;
-        } else {
-            // Normal provider models can be deleted
-            modelItem.innerHTML = `
-                <span class="model-name">${escapeHtml(model)}</span>
-                <button class="delete-model-btn" data-model="${escapeHtml(model)}" title="删除模型">×</button>
-            `;
-            
-            // Delete button click handler
+        const currentThinking = provider.modelThinkingTypes[model] || 'auto';
+        const deleteBtnHtml = isBuiltin
+            ? ''
+            : `<button class="delete-model-btn" data-model="${escapeHtml(model)}" title="${escapeHtml(t('deleteModel'))}">×</button>`;
+
+        modelItem.innerHTML = `
+            <span class="model-name" title="${escapeHtml(model)}">${escapeHtml(model)}</span>
+            <div class="model-item-actions">
+                <span class="model-thinking-label">${escapeHtml(t('thinkingLabel'))}</span>
+                <select class="model-thinking-select" data-model="${escapeHtml(model)}" title="${escapeHtml(t('thinkingType'))}">
+                    <option value="auto"${currentThinking === 'auto' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeAuto'))}</option>
+                    <option value="openai"${currentThinking === 'openai' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeOpenAI'))}</option>
+                    <option value="deepseek"${currentThinking === 'deepseek' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeDeepSeek'))}</option>
+                    <option value="qwen"${currentThinking === 'qwen' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeQwen'))}</option>
+                    <option value="gemini"${currentThinking === 'gemini' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeGemini'))}</option>
+                    <option value="none"${currentThinking === 'none' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeNone'))}</option>
+                </select>
+                ${deleteBtnHtml}
+            </div>
+        `;
+        
+        const selectEl = modelItem.querySelector('.model-thinking-select');
+        if (selectEl) {
+            selectEl.addEventListener('change', (e) => {
+                if (!provider.modelThinkingTypes) provider.modelThinkingTypes = {};
+                provider.modelThinkingTypes[model] = e.target.value;
+            });
+        }
+
+        if (!isBuiltin) {
             const deleteBtn = modelItem.querySelector('.delete-model-btn');
             if (deleteBtn) {
                 deleteBtn.addEventListener('click', () => {
                     provider.models = provider.models.filter(m => m !== model);
+                    if (provider.modelThinkingTypes) {
+                        delete provider.modelThinkingTypes[model];
+                    }
                     renderModelsList(provider);
                     renderProvidersList();
                 });
@@ -2232,6 +2288,7 @@ function addProviderUI() {
         baseUrl: 'https://api.openai.com/v1',
         apiKey: '',
         models: ['gpt-3.5-turbo'],
+        modelThinkingTypes: {},
         apiType: 'openai',
         googleSearch: false
     });
@@ -2472,6 +2529,7 @@ function importModelConfig(event) {
                     if (!existingIds.has(provider.id)) {
                         if (!provider.apiType) provider.apiType = 'openai';
                         if (provider.googleSearch === undefined) provider.googleSearch = false;
+                        if (!provider.modelThinkingTypes) provider.modelThinkingTypes = {};
                         state.providers.push(provider);
                         addedCount++;
                     }

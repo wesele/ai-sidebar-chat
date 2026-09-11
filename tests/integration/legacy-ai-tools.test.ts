@@ -121,6 +121,15 @@ describe('legacy AI tools regression', () => {
     name.dispatchEvent(new Event('input', { bubbles: true }));
     expect(document.querySelector('#providers-list img')).toBeNull();
     expect(document.getElementById('p-edit-key')?.getAttribute('value')).toBe('');
+
+    const thinkingSelect = document.querySelector('.model-thinking-select') as HTMLSelectElement | null;
+    expect(thinkingSelect).not.toBeNull();
+    expect(thinkingSelect?.value).toBe('auto');
+    if (thinkingSelect) {
+      thinkingSelect.value = 'deepseek';
+      thinkingSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     const fetchModels = document.getElementById('test-fetch-btn') as HTMLButtonElement | null;
     fetchModels?.click();
     await new Promise((resolve) => setTimeout(resolve, 0));

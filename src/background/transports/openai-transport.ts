@@ -6,7 +6,7 @@ import type {
   RawIssue,
 } from '../../shared/schemas';
 import { fullAnalysisPrompt, unitAnalysisPrompt } from '../analysis-prompt';
-import { getThinkingRequestPatch, type ThinkingMode } from '../../shared/thinking';
+import { getThinkingRequestPatch, type ThinkingMode, type ThinkingType } from '../../shared/thinking';
 
 export interface ProviderConfig {
   id: string;
@@ -14,6 +14,7 @@ export interface ProviderConfig {
   apiKey: string;
   modelId: string;
   kind: 'openai' | 'gemini';
+  thinkingType?: ThinkingType;
 }
 
 // ── Structured tool schemas ──────────────────────────────────────────────────
@@ -242,7 +243,7 @@ export class OpenAITransport {
       // understood by vLLM and leaves a thinking request running indefinitely.
       ...(() => {
         const mode = typeof this.thinkingMode === 'boolean' ? (this.thinkingMode ? 'auto-off' : 'default') : this.thinkingMode;
-        const patch = getThinkingRequestPatch('openai', this.provider.modelId, mode);
+        const patch = getThinkingRequestPatch('openai', this.provider.modelId, mode, this.provider.thinkingType);
         if (typeof this.thinkingMode === 'boolean' && /qwen/i.test(this.provider.modelId)) {
           patch.chat_template_kwargs = { enable_thinking: this.thinkingMode ? false : true };
         }

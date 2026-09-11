@@ -7,7 +7,7 @@ import type {
 import type { ProviderConfig } from './openai-transport';
 import { normalizeAnalysisResponse, normalizeFullDocumentResponse } from './openai-transport';
 import { fullAnalysisPrompt, unitAnalysisPrompt } from '../analysis-prompt';
-import { getGeminiThinkingPatch, type ThinkingMode } from '../../shared/thinking';
+import { getThinkingRequestPatch, type ThinkingMode } from '../../shared/thinking';
 
 // ── Gemini responseSchema definitions ───────────────────────────────────────
 
@@ -123,12 +123,12 @@ export class GeminiTransport {
               mode: 'AUTO',
             },
           },
-           generationConfig: (this.thinkingMode === 'auto-off' || this.thinkingMode === true) ? getGeminiThinkingPatch(this.provider.modelId).generationConfig : {},
+           generationConfig: (this.thinkingMode === 'auto-off' || this.thinkingMode === true) ? (getThinkingRequestPatch('gemini', this.provider.modelId, 'auto-off', this.provider.thinkingType).generationConfig ?? {}) : {},
         }
         : {
           generationConfig: {
             responseMimeType: 'application/json',
-             ...((this.thinkingMode === 'auto-off' || this.thinkingMode === true) ? getGeminiThinkingPatch(this.provider.modelId).generationConfig : {}),
+             ...((this.thinkingMode === 'auto-off' || this.thinkingMode === true) ? (getThinkingRequestPatch('gemini', this.provider.modelId, 'auto-off', this.provider.thinkingType).generationConfig ?? {}) : {}),
           },
         }),
     };
