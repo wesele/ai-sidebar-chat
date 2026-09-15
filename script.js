@@ -134,7 +134,14 @@ const translations = {
     statsToggleOn: 'Hide timing stats',
     statsToggleOff: 'Show timing stats',
     messageAlignLeftRight: 'User right, AI left',
-    messageAlignBothLeft: 'Both on left'
+    messageAlignBothLeft: 'Both on left',
+    modelType: 'Model Type',
+    modelTypeChat: 'Chat',
+    modelTypeImage: 'Image',
+    generatingImage: 'Generating image, please wait...',
+    imageModelNoThinking: 'Image generation model (no thinking params)',
+    downloadImage: 'Download',
+    imagePromptPlaceholder: 'Enter image prompt... (Shift+Enter for new line)'
   },
   'zh-CN': {
     primaryTabWriting: '写作助手',
@@ -217,7 +224,14 @@ const translations = {
     statsToggleOn: '隐藏时间指标',
     statsToggleOff: '显示时间指标',
     messageAlignLeftRight: '用户右，AI左',
-    messageAlignBothLeft: '都在左侧'
+    messageAlignBothLeft: '都在左侧',
+    modelType: '模型用途',
+    modelTypeChat: '对话',
+    modelTypeImage: '生图',
+    generatingImage: '正在生成图片中，请稍候...',
+    imageModelNoThinking: '生图模型不支持思考参数',
+    downloadImage: '下载原图',
+    imagePromptPlaceholder: '输入生图提示词... (Shift+Enter 换行)'
   },
   'es': {
     primaryTabWriting: 'Asistente de Escritura',
@@ -259,7 +273,14 @@ const translations = {
     statsToggleOn: 'Ocultar estadísticas',
     statsToggleOff: 'Mostrar estadísticas',
     messageAlignLeftRight: 'Usuario der, AI izq',
-    messageAlignBothLeft: 'Ambos a la izq'
+    messageAlignBothLeft: 'Ambos a la izq',
+    modelType: 'Tipo de modelo',
+    modelTypeChat: 'Chat',
+    modelTypeImage: 'Imagen',
+    generatingImage: 'Generando imagen, por favor espera...',
+    imageModelNoThinking: 'Modelo de imagen (sin parámetros de pensamiento)',
+    downloadImage: 'Descargar original',
+    imagePromptPlaceholder: 'Introduce la descripción de la imagen... (Shift+Enter para nueva línea)'
   }
 };
 
@@ -897,7 +918,29 @@ function renderMessageContent(msg) {
         `;
     }
 
-    return thinkHtml + parseMarkdown(mainContent) + statsHtml;
+    let imagesHtml = '';
+    if (msg.images && msg.images.length > 0) {
+        imagesHtml = '<div class="message-images generated-images">';
+        msg.images.forEach((img, idx) => {
+            const src = typeof img === 'string' ? img : (img.url || img.data || '');
+            const alt = typeof img === 'object' && img.alt ? img.alt : `Generated Image ${idx + 1}`;
+            if (src) {
+                imagesHtml += `
+                    <div class="generated-image-card">
+                        <img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" class="message-image generated-image" loading="lazy">
+                        <div class="generated-image-actions">
+                            <a href="${escapeHtml(src)}" target="_blank" download="generated-${idx + 1}.png" class="image-download-btn" title="${escapeHtml(t('downloadImage'))}">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                <span>${escapeHtml(t('downloadImage'))}</span>
+                            </a>
+                        </div>
+                    </div>`;
+            }
+        });
+        imagesHtml += '</div>';
+    }
+
+    return thinkHtml + imagesHtml + parseMarkdown(mainContent) + statsHtml;
 }
 
 function scrollToBottom() {
@@ -956,97 +999,121 @@ async function sendMessage() {
     const provider = state.providers.find(p => p.id === ctx.modelProviderId);
     if (!provider) throw new Error('Provider not found');
     
-    let history = ctx.messages.slice(0, -1);
-    if (ctx.maxHistory === 1) {
-      history = [];
-    } else if (ctx.maxHistory > 1) {
-      history = history.slice(-(ctx.maxHistory - 1));
-    }
-    const messages = [
-      { role: 'system', content: ctx.systemPrompt },
-      ...history,
-      userMsg
-    ];
-
-    let customParams = {};
-    try {
-        if(ctx.customParams) {
-            customParams = JSON.parse(ctx.customParams);
+    if (isImageModel(provider, ctx.modelId)) {
+        if (!content || content === '[图片]') {
+            throw new Error(t('imagePromptPlaceholder'));
         }
-    } catch(e) {
-        console.error('Failed to parse custom params', e);
-    }
+        msgDiv.innerHTML = `<div class="generating-image-status">🎨 ${escapeHtml(t('generatingImage'))}</div>`;
+        scrollToBottom();
 
-    await streamCompletion(provider, ctx.modelId, messages, ctx, customParams, 
-        (chunk, chunkUsage, isReasoning) => {
-            const now = Date.now();
-            
-            // TTFT
-            if (!firstTokenTime && (chunk || chunkUsage || isReasoning)) { 
-                firstTokenTime = now;
-                assistantMsg.timings.firstTokenTime = firstTokenTime;
+        const imageUrls = await generateImage(provider, ctx.modelId, content, abortController.signal);
+        const endTime = Date.now();
+        assistantMsg.timings.endTime = endTime;
+        const totalTime = ((endTime - startTime) / 1000).toFixed(2);
+        assistantMsg.images = imageUrls.map((url, i) => ({ url, alt: `${content} (${i + 1})` }));
+        assistantMsg.finalStats = {
+            ttft: totalTime,
+            totalTime,
+            tokens: `${imageUrls.length} 图`,
+            speed: imageUrls.length
+        };
+        msgDiv.innerHTML = renderMessageContent(assistantMsg);
+        msgDiv.dataset.index = ctx.messages.length;
+        ctx.messages.push(assistantMsg);
+        await saveState();
+    } else {
+        let history = ctx.messages.slice(0, -1);
+        if (ctx.maxHistory === 1) {
+          history = [];
+        } else if (ctx.maxHistory > 1) {
+          history = history.slice(-(ctx.maxHistory - 1));
+        }
+        const messages = [
+          { role: 'system', content: ctx.systemPrompt },
+          ...history,
+          userMsg
+        ];
+
+        let customParams = {};
+        try {
+            if(ctx.customParams) {
+                customParams = JSON.parse(ctx.customParams);
             }
-            
-            if (chunk) {
-                if (isReasoning) {
-                    assistantMsg.reasoningContent = (assistantMsg.reasoningContent || '') + chunk;
-                } else {
-                    if (assistantMsg.internal_hasStartedThinking && !assistantMsg.internal_hasEndedThinking) {
-                        assistantMsg.content += "</think>";
-                        assistantMsg.internal_hasEndedThinking = true;
+        } catch(e) {
+            console.error('Failed to parse custom params', e);
+        }
+
+        await streamCompletion(provider, ctx.modelId, messages, ctx, customParams, 
+            (chunk, chunkUsage, isReasoning) => {
+                const now = Date.now();
+                
+                // TTFT
+                if (!firstTokenTime && (chunk || chunkUsage || isReasoning)) { 
+                    firstTokenTime = now;
+                    assistantMsg.timings.firstTokenTime = firstTokenTime;
+                }
+                
+                if (chunk) {
+                    if (isReasoning) {
+                        assistantMsg.reasoningContent = (assistantMsg.reasoningContent || '') + chunk;
+                    } else {
+                        if (assistantMsg.internal_hasStartedThinking && !assistantMsg.internal_hasEndedThinking) {
+                            assistantMsg.content += "</think>";
+                            assistantMsg.internal_hasEndedThinking = true;
+                            thinkEndTime = now;
+                            assistantMsg.timings.thinkEndTime = thinkEndTime;
+                            assistantMsg.timings.thinkDuration = thinkEndTime - startTime;
+                        }
+                        assistantMsg.content += chunk;
+                    }
+                    
+                    estimatedTokens += 1; 
+                    
+                    if (!thinkEndTime && assistantMsg.content.includes('</think>')) {
                         thinkEndTime = now;
                         assistantMsg.timings.thinkEndTime = thinkEndTime;
                         assistantMsg.timings.thinkDuration = thinkEndTime - startTime;
                     }
-                    assistantMsg.content += chunk;
                 }
                 
-                estimatedTokens += 1; 
-                
-                if (!thinkEndTime && assistantMsg.content.includes('</think>')) {
-                    thinkEndTime = now;
-                    assistantMsg.timings.thinkEndTime = thinkEndTime;
-                    assistantMsg.timings.thinkDuration = thinkEndTime - startTime;
+                if (chunkUsage) {
+                    usage = chunkUsage;
                 }
-            }
-            
-            if (chunkUsage) {
-                usage = chunkUsage;
-            }
-            
-            msgDiv.innerHTML = renderMessageContent(assistantMsg);
-            scrollToBottom();
-        }, 
-        abortController.signal
-    );
-    
-    const endTime = Date.now();
-    assistantMsg.timings.endTime = endTime;
-    
-    const ttft = firstTokenTime ? ((firstTokenTime - startTime) / 1000).toFixed(2) : '0.00';
-    const totalTime = ((endTime - startTime) / 1000).toFixed(2);
-    
-    let finalTokens = estimatedTokens;
-    let isExact = false;
-    if (usage && usage.completion_tokens) {
-        finalTokens = usage.completion_tokens;
-        isExact = true;
+                
+                msgDiv.innerHTML = renderMessageContent(assistantMsg);
+                scrollToBottom();
+            }, 
+            abortController.signal
+        );
+        
+        const endTime = Date.now();
+        assistantMsg.timings.endTime = endTime;
+        
+        const ttft = firstTokenTime ? ((firstTokenTime - startTime) / 1000).toFixed(2) : '0.00';
+        const totalTime = ((endTime - startTime) / 1000).toFixed(2);
+        
+        let finalTokens = estimatedTokens;
+        let isExact = false;
+        if (usage && usage.completion_tokens) {
+            finalTokens = usage.completion_tokens;
+            isExact = true;
+        }
+        
+        const speed = parseFloat(totalTime) > 0 ? (finalTokens / parseFloat(totalTime)).toFixed(1) : 0;
+        
+        assistantMsg.finalStats = {
+            ttft,
+            totalTime,
+            tokens: finalTokens + (isExact ? '' : ' (Est)'),
+            speed
+        };
+        
+        msgDiv.innerHTML = renderMessageContent(assistantMsg);
+        msgDiv.dataset.index = ctx.messages.length;
+        
+        ctx.messages.push(assistantMsg);
+        await saveState();
     }
-    
-    const speed = parseFloat(totalTime) > 0 ? (finalTokens / parseFloat(totalTime)).toFixed(1) : 0;
-    
-    assistantMsg.finalStats = {
-        ttft,
-        totalTime,
-        tokens: finalTokens + (isExact ? '' : ' (Est)'),
-        speed
-    };
-    
-    msgDiv.innerHTML = renderMessageContent(assistantMsg);
-    msgDiv.dataset.index = ctx.messages.length;
-    
-    ctx.messages.push(assistantMsg);
-    await saveState();
 
   } catch (err) {
     if (err.name === 'AbortError') {
@@ -1076,6 +1143,124 @@ function applyOpenAIThinkingMode(body, modelId, thinkingType = 'auto') {
     if (thinkingMode !== 'auto-off') return;
     const patch = getThinkingRequestPatch('openai', modelId, 'auto-off', thinkingType);
     applyThinkingRequestPatch(body, patch);
+}
+
+function isImageModel(provider, modelId) {
+    if (!modelId) return false;
+    const configuredType = provider?.modelTypes?.[modelId];
+    if (configuredType === 'image') return true;
+    if (configuredType === 'chat') return false;
+    return /dall[-_]?e|flux|stable[-_]?diffusion|sdxl|imagen|midjourney|recraft|cogview|kolors|wanx|image[-_]?gen/i.test(modelId);
+}
+
+async function generateImageViaChat(provider, modelId, prompt, signal) {
+    const chatUrl = `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`;
+    const chatRes = await fetch(chatUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${provider.apiKey}`,
+            'Cache-Control': 'no-cache'
+        },
+        body: JSON.stringify({
+            model: modelId,
+            messages: [{ role: 'user', content: prompt }]
+        }),
+        signal,
+        cache: 'no-cache'
+    });
+
+    if (!chatRes.ok) {
+        const chatErr = await chatRes.text().catch(() => '');
+        throw new Error(`Chat API Error: ${chatRes.status}${chatErr ? ' - ' + chatErr : ''}`);
+    }
+
+    const chatData = await chatRes.json();
+    const msg = chatData?.choices?.[0]?.message;
+    let urls = [];
+    if (Array.isArray(msg?.images)) {
+        urls = msg.images.map(img => img?.image_url?.url || img?.url).filter(Boolean);
+    }
+    const content = typeof msg?.content === 'string' ? msg.content.trim() : '';
+    if (content.startsWith('data:image/') || /^https?:\/\/.+\.(png|jpg|jpeg|webp|gif)/i.test(content)) {
+        urls.push(content);
+    } else if (content) {
+        const mdMatches = Array.from(content.matchAll(/!\[.*?\]\(((?:https?:\/\/|data:image\/)[^)\s]+)\)/g));
+        mdMatches.forEach(m => {
+            if (m[1]) urls.push(m[1]);
+        });
+    }
+
+    if (urls.length > 0) {
+        return urls;
+    }
+    throw new Error(content ? `模型未返回图片数据: ${content.slice(0, 150)}` : '模型未返回任何图片');
+}
+
+async function generateImage(provider, modelId, prompt, signal) {
+    const apiType = provider?.apiType || 'openai';
+    if (apiType === 'gemini') {
+        throw new Error('Gemini 原生协议图像生成暂未支持，请使用 OpenAI 兼容格式或选择支持生图的模型');
+    }
+
+    // Direct route for chat-multimodal image generation models
+    if (/gemini.*image/i.test(modelId)) {
+        return await generateImageViaChat(provider, modelId, prompt, signal);
+    }
+
+    const url = `${provider.baseUrl.replace(/\/$/, '')}/images/generations`;
+    const body = {
+        model: modelId,
+        prompt: prompt
+    };
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${provider.apiKey}`,
+            'Cache-Control': 'no-cache'
+        },
+        body: JSON.stringify(body),
+        signal,
+        cache: 'no-cache'
+    });
+
+    if (!response.ok && response.status === 400) {
+        const text = await response.text().catch(() => '');
+        if (/not supported on.*images\/generations/i.test(text)) {
+            return await generateImageViaChat(provider, modelId, prompt, signal);
+        }
+        throw new Error(`Image API Error: ${response.status} - ${text}`);
+    }
+
+    if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`Image API Error: ${response.status}${text ? ' - ' + text : ''}`);
+    }
+
+    const data = await response.json();
+    let imageUrls = [];
+    if (Array.isArray(data?.data)) {
+        imageUrls = data.data.map(item => {
+            if (typeof item === 'string') return item;
+            if (item?.url) return item.url;
+            if (item?.image_url) return item.image_url;
+            if (item?.b64_json) return `data:image/png;base64,${item.b64_json}`;
+            if (item?.image) return item.image.startsWith('data:') ? item.image : `data:image/png;base64,${item.image}`;
+            return '';
+        }).filter(Boolean);
+    } else if (data?.url) {
+        imageUrls = [data.url];
+    } else if (data?.data && typeof data.data === 'string') {
+        imageUrls = [data.data];
+    }
+
+    if (imageUrls.length === 0) {
+        throw new Error(data?.error?.message || 'API 未返回任何有效图片数据');
+    }
+
+    return imageUrls;
 }
 
 function addOptionalNumber(target, key, value) {
@@ -1562,6 +1747,9 @@ function parseMarkdown(text) {
     codeBlocks.push(`<pre><code>${code}</code></pre>`);
     return token;
   });
+  safeText = safeText.replace(/!\[(.*?)\]\(((?:https?:\/\/|data:image\/)[^)\s]+)\)/g, (_, alt, src) => {
+    return `<div class="markdown-image-wrap"><img src="${src}" alt="${alt}" class="message-image" loading="lazy"></div>`;
+  });
   safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   safeText = safeText.replace(/\n/g, '<br>');
   return safeText.replace(/\u0000CODE(\d+)\u0000/g, (_, index) => codeBlocks[Number(index)] || '');
@@ -1785,6 +1973,7 @@ els.chatInput.addEventListener('keydown', (e) => {
     });
     els.thinkingToggleBtn.addEventListener('click', (event) => {
         event.stopPropagation();
+        if (els.thinkingToggleBtn.classList.contains('disabled')) return;
         closeModelMenu();
         const isHidden = els.thinkingMenu.classList.contains('hidden');
         els.thinkingMenu.classList.toggle('hidden', !isHidden);
@@ -1942,11 +2131,15 @@ function renderModelsList(provider) {
     if (!provider.modelThinkingTypes) {
         provider.modelThinkingTypes = {};
     }
+    if (!provider.modelTypes) {
+        provider.modelTypes = {};
+    }
     
     provider.models.forEach(model => {
         const modelItem = document.createElement('div');
         modelItem.className = 'model-item';
         
+        const isImage = isImageModel(provider, model);
         const currentThinking = provider.modelThinkingTypes[model] || 'auto';
         const deleteBtnHtml = isBuiltin
             ? ''
@@ -1955,8 +2148,12 @@ function renderModelsList(provider) {
         modelItem.innerHTML = `
             <span class="model-name" title="${escapeHtml(model)}">${escapeHtml(model)}</span>
             <div class="model-item-actions">
-                <span class="model-thinking-label">${escapeHtml(t('thinkingLabel'))}</span>
-                <select class="model-thinking-select" data-model="${escapeHtml(model)}" title="${escapeHtml(t('thinkingType'))}">
+                <select class="model-type-select" data-model="${escapeHtml(model)}" title="${escapeHtml(t('modelType'))}">
+                    <option value="chat"${!isImage ? ' selected' : ''}>${escapeHtml(t('modelTypeChat'))}</option>
+                    <option value="image"${isImage ? ' selected' : ''}>${escapeHtml(t('modelTypeImage'))}</option>
+                </select>
+                <span class="model-thinking-label" style="${isImage ? 'display:none;' : ''}">${escapeHtml(t('thinkingLabel'))}</span>
+                <select class="model-thinking-select" data-model="${escapeHtml(model)}" title="${escapeHtml(t('thinkingType'))}" style="${isImage ? 'display:none;' : ''}">
                     <option value="auto"${currentThinking === 'auto' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeAuto'))}</option>
                     <option value="openai"${currentThinking === 'openai' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeOpenAI'))}</option>
                     <option value="deepseek"${currentThinking === 'deepseek' ? ' selected' : ''}>${escapeHtml(t('thinkingTypeDeepSeek'))}</option>
@@ -1968,6 +2165,17 @@ function renderModelsList(provider) {
             </div>
         `;
         
+        const typeSelectEl = modelItem.querySelector('.model-type-select');
+        if (typeSelectEl) {
+            typeSelectEl.addEventListener('change', (e) => {
+                if (!provider.modelTypes) provider.modelTypes = {};
+                provider.modelTypes[model] = e.target.value;
+                renderModelsList(provider);
+                renderProvidersList();
+                updateModelSelect();
+            });
+        }
+
         const selectEl = modelItem.querySelector('.model-thinking-select');
         if (selectEl) {
             selectEl.addEventListener('change', (e) => {
@@ -1984,8 +2192,12 @@ function renderModelsList(provider) {
                     if (provider.modelThinkingTypes) {
                         delete provider.modelThinkingTypes[model];
                     }
+                    if (provider.modelTypes) {
+                        delete provider.modelTypes[model];
+                    }
                     renderModelsList(provider);
                     renderProvidersList();
+                    updateModelSelect();
                 });
             }
         }
@@ -2365,9 +2577,10 @@ function updateModelSelect() {
 
         p.models.forEach(m => {
             const value = `${p.id}|${m}`;
+            const isImage = isImageModel(p, m);
             const opt = document.createElement('option');
             opt.value = value;
-            opt.textContent = m;
+            opt.textContent = isImage ? `[${t('modelTypeImage')}] ${m}` : m;
             group.appendChild(opt);
 
             if (els.modelSelectMenu) {
@@ -2380,6 +2593,12 @@ function updateModelSelect() {
                 const name = document.createElement('span');
                 name.className = 'model-select-item-name';
                 name.textContent = m;
+                if (isImage) {
+                    const badge = document.createElement('span');
+                    badge.className = 'model-select-item-badge';
+                    badge.textContent = t('modelTypeImage');
+                    name.appendChild(badge);
+                }
                 item.appendChild(name);
 
                 item.insertAdjacentHTML('beforeend', '<svg class="model-select-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>');
@@ -2430,6 +2649,22 @@ function syncModelSelectUI() {
     els.modelSelectMenu.querySelectorAll('.model-select-item').forEach(item => {
         item.setAttribute('aria-selected', String(item.dataset.value === currentVal));
     });
+
+    const ctx = getCurrentContext();
+    const provider = state.providers.find(p => p.id === ctx?.modelProviderId);
+    const isImage = isImageModel(provider, ctx?.modelId);
+    if (els.chatInput) {
+        els.chatInput.placeholder = isImage ? t('imagePromptPlaceholder') : t('inputPlaceholder');
+    }
+    if (els.thinkingToggleBtn) {
+        if (isImage) {
+            els.thinkingToggleBtn.classList.add('disabled');
+            els.thinkingToggleBtn.title = t('imageModelNoThinking');
+        } else {
+            els.thinkingToggleBtn.classList.remove('disabled');
+            els.thinkingToggleBtn.title = t('thinkingToggle');
+        }
+    }
 }
 
 function closeModelMenu() {

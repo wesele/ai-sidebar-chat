@@ -8,18 +8,32 @@ const send = (message: RuntimeMessage): void => {
   void runtime.messaging.send(message).catch(() => undefined);
 };
 
-function init(): void {
+async function init(): Promise<void> {
   const writing = document.getElementById('writing-assistant-panel');
   const tools = document.getElementById('app-container');
   if (!writing || !tools) return;
   const pendingBatch = new Map<string, { tabId: number; editorId: string; revision: number }>();
   const completedBatch = new Map<number, Extract<RuntimeMessage, { type: 'APPLY_RESULT' }>['payload']>();
-  const notifyPanelConnection = (open: boolean): void => send({
-    v: 1,
-    type: 'PANEL_CONNECTION_CHANGED',
-    correlationId: crypto.randomUUID(),
-    payload: { open },
-  });
+
+  let isMainTab = false;
+  try {
+    const curTab = await runtime.tabs.current?.();
+    if (curTab?.id !== undefined) {
+      isMainTab = true;
+    }
+  } catch {
+    isMainTab = false;
+  }
+
+  const notifyPanelConnection = (open: boolean): void => {
+    if (isMainTab) return;
+    send({
+      v: 1,
+      type: 'PANEL_CONNECTION_CHANGED',
+      correlationId: crypto.randomUUID(),
+      payload: { open },
+    });
+  };
   const panel = new WritingAssistantPanel(
     writing,
     async (settings) => {
@@ -67,20 +81,34 @@ function init(): void {
   );
 
   const switchTab = (tab: 'writing' | 'tools'): void => {
-    writing.hidden = tab !== 'writing';
-    tools.hidden = tab !== 'tools';
+    const targetTab = isMainTab ? 'tools' : tab;
+    writing.hidden = targetTab !== 'writing';
+    tools.hidden = targetTab !== 'tools';
     document.querySelectorAll<HTMLButtonElement>('[data-primary-tab]').forEach((button) => {
-      button.setAttribute('aria-selected', String(button.dataset.primaryTab === tab));
+      button.setAttribute('aria-selected', String(button.dataset.primaryTab === targetTab));
     });
-    void runtime.storage.set('activePrimaryTab', tab).catch(() => undefined);
+    if (!isMainTab) {
+      void runtime.storage.set('activePrimaryTab', targetTab).catch(() => undefined);
+    }
   };
 
   document.querySelectorAll<HTMLButtonElement>('[data-primary-tab]').forEach((button) => {
     button.addEventListener('click', () => switchTab(button.dataset.primaryTab as 'writing' | 'tools'));
   });
-  void runtime.storage.get<'writing' | 'tools'>('activePrimaryTab')
-    .then((tab) => switchTab(tab ?? 'writing'))
-    .catch(() => switchTab('writing'));
+
+  if (isMainTab) {
+    document.body.classList.add('main-tab-mode');
+    const writingTabBtn = document.querySelector<HTMLButtonElement>('[data-primary-tab="writing"]');
+    if (writingTabBtn) {
+      writingTabBtn.style.display = 'none';
+      writingTabBtn.hidden = true;
+    }
+    switchTab('tools');
+  } else {
+    void runtime.storage.get<'writing' | 'tools'>('activePrimaryTab')
+      .then((tab) => switchTab(tab ?? 'writing'))
+      .catch(() => switchTab('writing'));
+  }
   void runtime.storage.get<WritingSettings>('writingAssistantSettings')
     .then((settings) => panel.setSettings(settings ?? defaults))
     .catch(() => panel.setSettings(defaults));
@@ -136,18 +164,20 @@ function init(): void {
     notifyPanelConnection(true);
   });
   send({ v: 1, type: 'PROVIDERS_REQUEST', correlationId: crypto.randomUUID(), payload: {} });
-  notifyPanelConnection(true);
-  const reannouncePanel = (): void => notifyPanelConnection(true);
-  window.addEventListener('focus', reannouncePanel);
-  window.addEventListener('pageshow', reannouncePanel);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') reannouncePanel();
-  });
-  window.addEventListener('pagehide', () => notifyPanelConnection(false));
+  if (!isMainTab) {
+    notifyPanelConnection(true);
+    const reannouncePanel = (): void => notifyPanelConnection(true);
+    window.addEventListener('focus', reannouncePanel);
+    window.addEventListener('pageshow', reannouncePanel);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reannouncePanel();
+    });
+    window.addEventListener('pagehide', () => notifyPanelConnection(false));
+  }
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => { void init(); });
 } else {
-  init();
+  void init();
 }

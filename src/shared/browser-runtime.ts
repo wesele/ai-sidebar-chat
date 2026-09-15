@@ -20,7 +20,12 @@ export interface SettingsStorage {
 }
 export interface TypedMessaging { send(message: RuntimeMessage): Promise<unknown>; onMessage(listener: (message: RuntimeMessage, sender: chrome.runtime.MessageSender) => void): void; }
 export interface SidePanelCapability { open(tabId?: number): Promise<void>; setActionBehavior?(): Promise<void>; }
-export interface TabCapability { active(): Promise<{ id: number } | undefined>; send(tabId: number, message: RuntimeMessage): Promise<void>; onActivated?(listener: (tabId: number) => void): void; }
+export interface TabCapability {
+  active(): Promise<{ id: number } | undefined>;
+  current?(): Promise<{ id: number } | undefined>;
+  send(tabId: number, message: RuntimeMessage): Promise<void>;
+  onActivated?(listener: (tabId: number) => void): void;
+}
 export interface BrowserRuntime { storage: SettingsStorage; messaging: TypedMessaging; sidePanel: SidePanelCapability; tabs: TabCapability; }
 export function chromeRuntime(): BrowserRuntime {
   const browser = runtimeApi();
@@ -65,6 +70,22 @@ export function chromeRuntime(): BrowserRuntime {
       async active() {
         const tabs = await browser.tabs.query({ active: true, currentWindow: true });
         return tabs[0]?.id === undefined ? undefined : { id: tabs[0].id };
+      },
+      async current() {
+        if (!browser?.tabs?.getCurrent) return undefined;
+        return new Promise<{ id: number } | undefined>((resolve) => {
+          try {
+            browser.tabs.getCurrent((tab) => {
+              if (browser.runtime?.lastError || !tab?.id) {
+                resolve(undefined);
+              } else {
+                resolve({ id: tab.id });
+              }
+            });
+          } catch {
+            resolve(undefined);
+          }
+        });
       },
       async send(tabId, message) { await browser.tabs.sendMessage(tabId, message); },
       onActivated(listener) { browser.tabs.onActivated.addListener(({ tabId }) => listener(tabId)); },

@@ -40,6 +40,14 @@
   box-sizing: border-box;
 }
 
+body.main-tab-mode [data-primary-tab="writing"] {
+  display: none !important;
+}
+
+body.main-tab-mode #primary-tabs {
+  width: auto;
+}
+
 #primary-tabs button {
   flex: 1;
   padding: 7px 16px;
