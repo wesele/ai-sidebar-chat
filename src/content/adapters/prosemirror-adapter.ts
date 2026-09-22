@@ -63,6 +63,14 @@ export class ProseMirrorAdapter implements EditorAdapter {
     return this.delegate.getRangeGeometry(range);
   }
 
+  getRangesGeometry(ranges: TextRange[]): DOMRect[][] {
+    // The delegate builds the contenteditable text model once for the batch.
+    if (typeof this.delegate.getRangesGeometry === 'function') {
+      return this.delegate.getRangesGeometry(ranges);
+    }
+    return ranges.map((range) => this.delegate.getRangeGeometry(range));
+  }
+
   observe(callback: () => void): () => void {
     return this.delegate.observe(callback);
   }

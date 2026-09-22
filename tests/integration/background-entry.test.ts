@@ -26,10 +26,12 @@ const storage = new Map<string, unknown>([
   }],
 ]);
 const runtimeMessages: RuntimeMessage[] = [];
-const tabMessages: Array<{ tabId: number; message: RuntimeMessage }> = [];
+const tabMessages: Array<{ tabId: number; message: RuntimeMessage; target?: { frameId?: number } }> = [];
 const openedPanels: Array<number | undefined> = [];
 let listener: ((message: RuntimeMessage, sender: chrome.runtime.MessageSender) => void) | undefined;
 let storageChangeListener: ((key: string, value: unknown) => void) | undefined;
+let tabUpdated: ((tabId: number, change: { status?: string }) => void) | undefined;
+let tabRemoved: ((tabId: number) => void) | undefined;
 let providerReply: unknown;
 
 const runtime: BrowserRuntime = {
@@ -47,12 +49,14 @@ const runtime: BrowserRuntime = {
   },
   tabs: {
     active: vi.fn(async () => ({ id: 41 })),
-    send: vi.fn(async (tabId, message) => { tabMessages.push({ tabId, message }); }),
+    send: vi.fn(async (tabId, message, target) => { tabMessages.push({ tabId, message, target }); }),
+    onUpdated: (next) => { tabUpdated = next; },
+    onRemoved: (next) => { tabRemoved = next; },
   },
 };
 
-const dispatch = (message: RuntimeMessage, tabId?: number): void => {
-  listener?.(message, (tabId === undefined ? {} : { tab: { id: tabId } }) as chrome.runtime.MessageSender);
+const dispatch = (message: RuntimeMessage, tabId?: number, frameId = 0): void => {
+  listener?.(message, (tabId === undefined ? {} : { tab: { id: tabId }, frameId }) as chrome.runtime.MessageSender);
 };
 
 const unitRequest = (requestId: string): Extract<RuntimeMessage, { type: 'ANALYSIS_REQUESTED' }> => ({
@@ -157,12 +161,12 @@ describe('background service-worker entry', () => {
     await vi.waitFor(() => expect(openedPanels).toEqual([7]));
   });
 
-  it('replays the panel connection state when content requests its model status', async () => {
+  it('replays panel connection state only to its connected tab', async () => {
     dispatch({
       v: 1,
       type: 'PANEL_CONNECTION_CHANGED',
       correlationId: 'panel-open',
-      payload: { open: true },
+      payload: { tabId: 7, open: true },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     tabMessages.length = 0;
@@ -177,7 +181,21 @@ describe('background service-worker entry', () => {
       message.type === 'PANEL_CONNECTION_CHANGED')).toBe(true));
     expect(tabMessages[0]).toMatchObject({
       tabId: 7,
-      message: { type: 'PANEL_CONNECTION_CHANGED', payload: { open: true } },
+      message: { type: 'PANEL_CONNECTION_CHANGED', payload: { tabId: 7, open: true } },
+    });
+
+    tabMessages.length = 0;
+    dispatch({
+      v: 1,
+      type: 'WRITING_MODEL_STATUS_REQUEST',
+      correlationId: 'status-other-tab',
+      payload: {},
+    }, 8);
+    await vi.waitFor(() => expect(tabMessages.some(({ message }) =>
+      message.type === 'PANEL_CONNECTION_CHANGED')).toBe(true));
+    expect(tabMessages[0]).toMatchObject({
+      tabId: 8,
+      message: { type: 'PANEL_CONNECTION_CHANGED', payload: { tabId: 8, open: false } },
     });
   });
 
@@ -187,10 +205,11 @@ describe('background service-worker entry', () => {
       units: [{ unitId: 'sentence-1', unitRevision: 1, issues: [] }],
     };
     providerReply = { choices: [{ message: { content: JSON.stringify(unitResponse) } }] };
-    dispatch(unitRequest('unit'), 9);
+    dispatch(unitRequest('unit'), 9, 4);
     await vi.waitFor(() => expect(tabMessages.some(({ message }) =>
       message.type === 'ANALYSIS_COMPLETED' && message.payload.requestId === 'unit')).toBe(true));
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+    expect(tabMessages.find(({ message }) => message.type === 'ANALYSIS_COMPLETED')?.target).toEqual({ frameId: 4 });
     const [url, init] = vi.mocked(fetch).mock.calls[0];
     expect(String(url)).toBe('https://provider.test/v1/chat/completions');
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer secret-key');
@@ -208,6 +227,26 @@ describe('background service-worker entry', () => {
     }, 9);
     await vi.waitFor(() => expect(tabMessages.some(({ message }) =>
       message.type === 'ANALYSIS_COMPLETED' && message.payload.requestId === 'full')).toBe(true));
+  });
+
+  it('cancels in-flight work when its tab navigates or closes', async () => {
+    let release: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>((resolve) => { release = resolve; }));
+    dispatch(unitRequest('navigate-away'), 12, 3);
+    await vi.waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+
+    tabUpdated?.(12, { status: 'loading' });
+    release?.(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        schemaVersion: '1', requestId: 'navigate-away', documentRevision: 2,
+        units: [{ unitId: 'sentence-1', unitRevision: 1, issues: [] }],
+      }) } }],
+    }), { status: 200 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(tabMessages.some(({ message }) =>
+      message.type === 'ANALYSIS_COMPLETED' && message.payload.requestId === 'navigate-away')).toBe(false);
+
+    tabRemoved?.(12);
   });
 
   it('reports no-model and provider authorization failures without leaking errors', async () => {

@@ -65,12 +65,17 @@ export function validateResponse(
     !Array.isArray(response.units)
   ) return { valid, rejected: ['response'] };
 
+  // Index expected units once: a linear find per response unit is
+  // O(responseUnits × expectedUnits) and dominated batch-response CPU on
+  // long documents.
+  const expectedById = new Map(expected.units.map((candidate) => [candidate.id, candidate] as const));
+
   for (const rawUnit of response.units) {
     if (!isRecord(rawUnit)) {
       rejected.push('unit');
       continue;
     }
-    const unit = expected.units.find((candidate) => candidate.id === rawUnit.unitId);
+    const unit = typeof rawUnit.unitId === 'string' ? expectedById.get(rawUnit.unitId) : undefined;
     // Units are matched by id only: reasoning models routinely echo the
     // schema-example revision (1) instead of the requested unitRevision, and
     // staleness is already enforced at the request level (requestId +

@@ -11,16 +11,30 @@ export function installEditorDiscovery(listener: EditorListener): () => void {
     listener(editor);
   };
 
+  const resolveEditor = (el: HTMLElement): HTMLElement => {
+    if (el.isContentEditable) {
+      const root = el.closest('[contenteditable="true"], [contenteditable=""]');
+      if (root instanceof HTMLElement && isEligibleEditor(root)) return root;
+    }
+    return el;
+  };
+
   const onFocus = (event: FocusEvent): void => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-    if (isEligibleEditor(target)) select(target);
+    const editor = resolveEditor(target);
+    if (isEligibleEditor(editor)) {
+      select(editor);
+    }
     else if (target.matches('input,textarea,[contenteditable]')) select(undefined);
   };
 
   const onInput = (event: Event): void => {
     const target = event.target;
-    if (target instanceof HTMLElement && isEligibleEditor(target)) select(target);
+    if (target instanceof HTMLElement) {
+      const editor = resolveEditor(target);
+      if (isEligibleEditor(editor)) select(editor);
+    }
   };
 
   const observer = new MutationObserver(() => {
@@ -32,7 +46,10 @@ export function installEditorDiscovery(listener: EditorListener): () => void {
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   const active = document.activeElement;
-  if (active instanceof HTMLElement && isEligibleEditor(active)) select(active);
+  if (active instanceof HTMLElement) {
+    const editor = resolveEditor(active);
+    if (isEligibleEditor(editor)) select(editor);
+  }
 
   return () => {
     document.removeEventListener('focusin', onFocus, true);

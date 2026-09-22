@@ -248,6 +248,7 @@ export class WritingAssistantPanel {
   private showFullText = false;
   private showErrorModal = false;
   private errorModalBackdrop?: HTMLElement;
+  private lastStateFingerprint?: string;
 
   constructor(
     private readonly root: HTMLElement,
@@ -269,6 +270,21 @@ export class WritingAssistantPanel {
   }
 
   setState(state: EditorViewState, tabId = this.tabId): void {
+    // Content scripts publish on every caret move/scroll/resize; identical
+    // states must not rebuild the whole panel DOM each time (sustained CPU).
+    // Build a compact, deterministic fingerprint without serializing huge batch/preview lists.
+    const countsKey = `${state.counts.local}:${state.counts.sentence}:${state.counts.paragraph}`;
+    const curSentenceKey = state.currentSentence ? `${state.currentSentence.issueId}:${state.currentSentence.replacement}` : '';
+    const curParagraphKey = state.currentParagraph ? `${state.currentParagraph.issueId}:${state.currentParagraph.replacement}` : '';
+    // The rendered suggestion cards come from currentParagraphIssues; without it
+    // in the fingerprint, caret moves between paragraphs that hold only local
+    // issues are deduped away and the panel keeps the previous paragraph's list.
+    const paragraphIssuesKey = (state.currentParagraphIssues ?? [])
+      .map((issue) => `${issue.issueId}:${issue.replacement}`)
+      .join('|');
+    const fingerprint = `${tabId}:${state.editorId}:${state.revision}:${state.status}:${countsKey}:${curSentenceKey}:${curParagraphKey}:${paragraphIssuesKey}:${state.fullResult?.severity ?? ''}:${state.fullAnalysisPending ? 1 : 0}:${state.errorReason ?? ''}`;
+    if (fingerprint === this.lastStateFingerprint) return;
+    this.lastStateFingerprint = fingerprint;
     if (this.tabId !== undefined && tabId !== this.tabId) {
       this.previewScope = undefined;
       this.applyResult = undefined;
@@ -291,6 +307,18 @@ export class WritingAssistantPanel {
   }
 
   clearState(tabId?: number): void {
+    // Tab switches fire onActivated frequently; skip the full panel rebuild
+    // when there is nothing to clear.
+    if (
+      this.lastStateFingerprint === undefined &&
+      this.state === undefined &&
+      this.previewScope === undefined &&
+      this.applyResult === undefined &&
+      !this.showFullText &&
+      !this.showErrorModal &&
+      this.tabId === tabId
+    ) return;
+    this.lastStateFingerprint = undefined;
     this.tabId = tabId;
     this.state = undefined;
     this.previewScope = undefined;
@@ -878,6 +906,9 @@ export class WritingAssistantPanel {
     if (!this.previewScope) return;
     const scope = this.previewScope;
     const items = this.state?.batchPreviews?.[scope] ?? [];
+    // counts is authoritative: content caps batchPreviews for message size,
+    // while APPLY_ALL expectedCount must match the full analyzed issue set.
+    const totalCount = this.state?.counts?.[scope] ?? items.length;
     const preview = document.createElement('section');
     preview.dataset.batchPreview = scope;
     preview.setAttribute('role', 'dialog');
@@ -892,10 +923,10 @@ export class WritingAssistantPanel {
 
     const heading = document.createElement('h3');
     heading.textContent = this.uiLanguage === 'en'
-      ? `Preview ${items.length} ${scopeName} change(s)`
+      ? `Preview ${totalCount} ${scopeName} change(s)`
       : this.uiLanguage === 'es'
-        ? `Vista previa de ${items.length} cambio(s) de ${scopeName}`
-        : `预览 ${items.length} 项${scopeName}修改`;
+        ? `Vista previa de ${totalCount} cambio(s) de ${scopeName}`
+        : `预览 ${totalCount} 项${scopeName}修改`;
     preview.append(heading);
 
     const list = document.createElement('ol');
@@ -923,7 +954,7 @@ export class WritingAssistantPanel {
         editorId: state.editorId,
         revision: state.revision,
         scope,
-        expectedCount: items.length,
+        expectedCount: totalCount,
       });
       this.render();
     });

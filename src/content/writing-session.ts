@@ -18,8 +18,17 @@ export interface WritingSettings {
 }
 
 type PendingRequest =
-  | { kind: 'units'; revision: number; remaining: Set<string>; totalApiCalls: number; apiCallsDone: number }
+  | { kind: 'units'; revision: number; remaining: Set<string>; totalApiCalls?: number; apiCallsDone?: number }
   | { kind: 'full'; revision: number };
+
+const CONTEXT_CHARACTER_LIMIT = 800;
+/**
+ * Cap per-scope batch previews in EDITOR_STATE_CHANGED. Every publish
+ * structured-clones this payload to the side panel while issues accumulate
+ * during analysis; the preview modal only needs a bounded list (counts stay
+ * authoritative for totals / APPLY_ALL expectedCount).
+ */
+const BATCH_PREVIEW_LIMIT = 200;
 
 const projectPreview = (issue: Issue) => ({
   issueId: issue.issueId,
@@ -32,7 +41,11 @@ const projectPreview = (issue: Issue) => ({
 export class WritingSession {
   private cache?: DocumentCache;
   private timer?: number;
+  private selectionFrame?: number;
   private composing = false;
+  private paused = false;
+  private reanalysisPending = false;
+  private resumeTimer?: number;
   private unsubscribe?: () => void;
   private lastSentenceId?: string;
   private lastParagraphId?: string;
@@ -47,15 +60,27 @@ export class WritingSession {
     private readonly cancel: (requestId: string) => void,
     private readonly publish: (cache: DocumentCache) => void,
     private readonly settings: () => WritingSettings,
+    /**
+     * Lightweight caret refresh: invoked when the selection changed but the
+     * caret stayed inside the same sentence/paragraph and no analysis work was
+     * triggered. Listeners should only reposition the status dot (cheap) and
+     * must NOT rebuild annotations or re-render panel state.
+     */
+    private readonly notifyCaret?: () => void,
   ) {}
+  /** Snapshot reuse for the currently handled selection event (see onSelectionChange). */
+  private snapshotHint?: Readonly<import('../domain/text/snapshot').EditorSnapshot>;
 
   start(): void {
-    this.onInput();
     this.unsubscribe = this.adapter.observe(this.onInput);
     this.adapter.element.addEventListener('compositionstart', this.onCompositionStart);
     this.adapter.element.addEventListener('compositionend', this.onCompositionEnd);
     this.adapter.element.addEventListener('focusout', this.onFocusOut);
+    this.adapter.element.addEventListener('click', this.onSelectionChange);
+    this.adapter.element.addEventListener('pointerup', this.onSelectionChange);
+    this.adapter.element.addEventListener('keyup', this.onSelectionChange);
     document.addEventListener('selectionchange', this.onSelectionChange);
+    this.onInput();
   }
 
   initializeBaseline(): void {
@@ -81,12 +106,54 @@ export class WritingSession {
 
   stop(): void {
     if (this.timer) clearTimeout(this.timer);
+    if (this.selectionFrame) cancelAnimationFrame(this.selectionFrame);
+    if (this.resumeTimer) clearTimeout(this.resumeTimer);
+    this.selectionFrame = undefined;
+    this.resumeTimer = undefined;
     this.unsubscribe?.();
     this.adapter.element.removeEventListener('compositionstart', this.onCompositionStart);
     this.adapter.element.removeEventListener('compositionend', this.onCompositionEnd);
     this.adapter.element.removeEventListener('focusout', this.onFocusOut);
+    this.adapter.element.removeEventListener('click', this.onSelectionChange);
+    this.adapter.element.removeEventListener('pointerup', this.onSelectionChange);
+    this.adapter.element.removeEventListener('keyup', this.onSelectionChange);
     document.removeEventListener('selectionchange', this.onSelectionChange);
     this.cancelPending();
+  }
+
+  /** Pause all work while the page is hidden without discarding existing results. */
+  pause(): void {
+    if (this.paused) return;
+    this.paused = true;
+    if (this.timer) clearTimeout(this.timer);
+    if (this.resumeTimer) clearTimeout(this.resumeTimer);
+    this.timer = undefined;
+    this.resumeTimer = undefined;
+    if (this.selectionFrame) cancelAnimationFrame(this.selectionFrame);
+    this.selectionFrame = undefined;
+    this.cancelPending();
+  }
+
+  /**
+   * Reconcile the editor once when the page becomes visible again.
+   * Deferred off the visibilitychange handler itself: a full readSnapshot +
+   * cache rebuild there blocks the browser's tab-switch animation on long
+   * documents (perceived freeze when switching tabs).
+   */
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    if (this.reanalysisPending) {
+      this.reanalysisPending = false;
+      this.reanalyzeAll();
+      return;
+    }
+    if (this.resumeTimer !== undefined) return;
+    this.resumeTimer = window.setTimeout(() => {
+      this.resumeTimer = undefined;
+      if (this.paused || this.composing) return;
+      this.onInput();
+    }, 0);
   }
 
   current(): DocumentCache | undefined {
@@ -94,7 +161,7 @@ export class WritingSession {
   }
 
   retry(): void {
-    if (this.cache) {
+    if (!this.paused && this.cache) {
       if (this.cache.status === 'error') {
         this.cache.status = 'dirty';
       }
@@ -114,6 +181,10 @@ export class WritingSession {
   /** Reset every unit and re-run the full detection immediately (e.g. when the target language changes). */
   reanalyzeAll(): void {
     if (!this.cache) return;
+    if (this.paused) {
+      this.reanalysisPending = true;
+      return;
+    }
     this.cancelPending();
     if (this.timer) {
       clearTimeout(this.timer);
@@ -158,7 +229,16 @@ export class WritingSession {
   };
 
   private readonly onSelectionChange = (): void => {
+    if (this.paused || this.composing || !this.cache || this.selectionFrame) return;
+    this.selectionFrame = requestAnimationFrame(() => {
+      this.selectionFrame = undefined;
+      this.processSelectionChange();
+    });
+  };
+
+  private processSelectionChange(): void {
     if (this.composing || !this.cache) return;
+    if (!this.selectionBelongsToEditor()) return;
     const previousSentenceId = this.lastSentenceId;
     const previousParagraphId = this.lastParagraphId;
     const snapshot = this.adapter.readSnapshot();
@@ -166,27 +246,65 @@ export class WritingSession {
     this.lastSentenceId = current.sentenceId;
     this.lastParagraphId = current.paragraphId;
 
-    if (previousParagraphId && previousParagraphId !== current.paragraphId) {
-      const prevParagraph = this.cache.paragraphs.find((p) => p.id === previousParagraphId);
-      // Only re-trigger if at least one sentence still needs analysis.
-      // paragraph.status being 'dirty' alone does NOT mean work is pending —
-      // it simply means no paragraph-scope issue unit was returned by the LLM,
-      // which is expected when the model only emits sentence/local results.
-      const isDirty = prevParagraph?.sentences.some(
-        (s) => s.status === 'dirty' || s.status === 'never',
-      );
-      if (isDirty) {
-        this.leaveParagraph(previousParagraphId);
+    // The snapshot was just read synchronously: let viewState() calls issued
+    // by leaveParagraph/dispatch/publish below reuse it instead of rebuilding
+    // the whole editor text model a second time for the same event.
+    this.snapshotHint = snapshot;
+    try {
+      let didWork = false;
+      if (previousParagraphId && previousParagraphId !== current.paragraphId) {
+        const prevParagraph = this.cache.paragraphs.find((p) => p.id === previousParagraphId);
+        // Only re-trigger if at least one sentence still needs analysis.
+        // paragraph.status being 'dirty' alone does NOT mean work is pending —
+        // it simply means no paragraph-scope issue unit was returned by the LLM,
+        // which is expected when the model only emits sentence/local results.
+        const isDirty = prevParagraph?.sentences.some(
+          (s) => s.status === 'dirty' || s.status === 'never',
+        );
+        if (isDirty) {
+          this.leaveParagraph(previousParagraphId);
+          didWork = true;
+        }
+      } else if (previousSentenceId && previousSentenceId !== current.sentenceId) {
+        const prevParagraph = this.cache.paragraphs.find((p) => p.id === this.lastParagraphId);
+        const prevSentence = prevParagraph?.sentences.find((s) => s.id === previousSentenceId);
+        if (prevSentence?.status === 'dirty') {
+          this.dispatch(false);
+          didWork = true;
+        }
       }
-    } else if (previousSentenceId && previousSentenceId !== current.sentenceId) {
-      const prevParagraph = this.cache.paragraphs.find((p) => p.id === this.lastParagraphId);
-      const prevSentence = prevParagraph?.sentences.find((s) => s.id === previousSentenceId);
-      if (prevSentence?.status === 'dirty') {
-        this.dispatch(false);
+      const movedUnit =
+        previousSentenceId !== current.sentenceId || previousParagraphId !== current.paragraphId;
+      if (movedUnit || didWork) {
+        // Caret entered another unit (panel shows per-unit issues) or fresh
+        // analysis work was queued: full publish.
+        this.publish(this.cache);
+      } else {
+        // Same sentence/paragraph, nothing queued: only the caret geometry
+        // (status dot position) may have changed. Skip the expensive full
+        // publish (snapshot rebuild + per-issue geometry + panel re-render);
+        // selectionchange fires continuously while dragging/selecting, and a
+        // full publish per event keeps the CPU busy indefinitely.
+        this.notifyCaret?.();
       }
+    } finally {
+      this.snapshotHint = undefined;
     }
-    this.publish(this.cache);
-  };
+  }
+
+  private selectionBelongsToEditor(): boolean {
+    if (this.adapter.element instanceof HTMLInputElement || this.adapter.element instanceof HTMLTextAreaElement) {
+      return document.activeElement === this.adapter.element;
+    }
+    const selection = window.getSelection();
+    return Boolean(
+      selection?.rangeCount &&
+      selection.anchorNode &&
+      selection.focusNode &&
+      this.adapter.element.contains(selection.anchorNode) &&
+      this.adapter.element.contains(selection.focusNode),
+    );
+  }
 
   private cancelPending(): void {
     for (const [requestId, pending] of this.pending) {
@@ -206,22 +324,6 @@ export class WritingSession {
     }
   }
 
-  private resolvePendingUnits(pending: PendingRequest): void {
-    if (!this.cache || pending.kind !== 'units') return;
-    for (const paragraph of this.cache.paragraphs) {
-      if (pending.remaining.has(paragraph.id) && paragraph.status === 'queued') {
-        paragraph.status = 'analyzed';
-        paragraph.analysisRevision = this.cache.revision;
-      }
-      for (const sentence of paragraph.sentences) {
-        if (pending.remaining.has(sentence.id) && sentence.status === 'queued') {
-          sentence.status = 'analyzed';
-          sentence.analysisRevision = this.cache.revision;
-        }
-      }
-    }
-  }
-
   fail(requestId: string, code?: string): void {
     const pending = this.pending.get(requestId);
     if (!pending || !this.cache) return;
@@ -235,7 +337,7 @@ export class WritingSession {
   }
 
   private readonly onInput = (): void => {
-    if (this.composing) return;
+    if (this.paused || this.composing) return;
     this.cancelPending();
     const previousParagraph = this.lastParagraphId;
     const snapshot = this.adapter.readSnapshot();
@@ -245,27 +347,55 @@ export class WritingSession {
     const current = this.unitsAt(snapshot.selection?.start ?? -1);
     this.lastSentenceId = current.sentenceId;
     this.lastParagraphId = current.paragraphId;
-    this.publish(this.cache);
+    this.snapshotHint = snapshot;
+    try {
+      this.publish(this.cache);
 
-    if (previousParagraph && previousParagraph !== current.paragraphId) {
-      this.leaveParagraph(previousParagraph);
-    }
-    if (this.timer) clearTimeout(this.timer);
-    if (!isApplying) {
-      // An edit in a long document should analyze the edited paragraph first;
-      // otherwise old quoted/history paragraphs can consume the whole batch.
-      this.timer = window.setTimeout(() => this.dispatch(false), 1500);
+      if (previousParagraph && previousParagraph !== current.paragraphId) {
+        this.leaveParagraph(previousParagraph);
+      }
+      if (this.timer) clearTimeout(this.timer);
+      if (!isApplying) {
+        // An edit in a long document should analyze the edited paragraph first;
+        // otherwise old quoted/history paragraphs can consume the whole batch.
+        this.timer = window.setTimeout(() => this.dispatch(false), 1500);
+      }
+    } finally {
+      this.snapshotHint = undefined;
     }
   };
 
   private unitsAt(offset: number): { paragraphId?: string; sentenceId?: string } {
-    const paragraph = this.cache?.paragraphs.find((item) => item.start <= offset && offset <= item.end);
-    const sentence = paragraph?.sentences.find((item) => item.start <= offset && offset <= item.end);
+    if (!this.cache || offset < 0) return {};
+    const paragraphs = this.cache.paragraphs;
+    let paragraph = binarySearchInterval(paragraphs, offset);
+    if (!paragraph) {
+      // Check if caret falls in interstitial space between paragraphs
+      for (let i = 0; i < paragraphs.length; i++) {
+        const next = paragraphs[i + 1];
+        if (offset >= paragraphs[i].end && (!next || offset < next.start)) {
+          paragraph = paragraphs[i];
+          break;
+        }
+      }
+    }
+    const sentences = paragraph?.sentences ?? [];
+    let sentence = binarySearchInterval(sentences, offset);
+    if (!sentence && paragraph) {
+      for (let i = 0; i < sentences.length; i++) {
+        const next = sentences[i + 1];
+        if (offset >= sentences[i].end && (!next || offset < next.start)) {
+          sentence = sentences[i];
+          break;
+        }
+      }
+    }
     return { paragraphId: paragraph?.id, sentenceId: sentence?.id };
   }
 
   requestFullDoc(): void {
-    const snapshot = this.adapter.readSnapshot();
+    if (this.paused) return;
+    const snapshot = this.snapshotHint ?? this.adapter.readSnapshot();
     if (
       this.cache &&
       this.settings().hasModel &&
@@ -286,11 +416,12 @@ export class WritingSession {
   }
 
   leaveParagraph(completedParagraphId = this.lastParagraphId): void {
+    if (this.paused) return;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
-    const snapshot = this.adapter.readSnapshot();
+    const snapshot = this.snapshotHint ?? this.adapter.readSnapshot();
     if (this.cache && snapshot.text.length > this.settings().fullDocumentCharacterLimit) {
       this.cache.status = 'error';
       this.publish(this.cache);
@@ -299,7 +430,9 @@ export class WritingSession {
   }
 
   private dispatch(paragraphComplete: boolean, completedParagraphId?: string): void {
-    const snapshot = this.adapter.readSnapshot();
+    if (this.paused) return;
+    // Reuse the snapshot already read for the current event when available.
+    const snapshot = this.snapshotHint ?? this.adapter.readSnapshot();
     if (!this.cache || !this.settings().hasModel) return;
     const units: AnalysisRequest['units'] = [];
 
@@ -315,8 +448,8 @@ export class WritingSession {
         if (canAnalyze(sentence.status, sentenceText, this.composing, isCompletedTarget ? false : inside, Date.now() - this.lastInputAt)) {
           sentence.status = 'queued';
           const sentenceIndex = paragraph.sentences.indexOf(sentence);
-          const before = snapshot.text.slice(paragraph.start, sentence.start).trim() || this.previousSentenceText(paragraph, sentenceIndex, snapshot.text);
-          const after = snapshot.text.slice(sentence.end, paragraph.end).trim() || this.nextSentenceText(paragraph, sentenceIndex, snapshot.text);
+          const before = trimContextBefore(snapshot.text.slice(paragraph.start, sentence.start).trim()) || this.previousSentenceText(paragraph, sentenceIndex, snapshot.text);
+          const after = trimContextAfter(snapshot.text.slice(sentence.end, paragraph.end).trim()) || this.nextSentenceText(paragraph, sentenceIndex, snapshot.text);
           units.push({
             unitId: sentence.id,
             unitRevision: sentence.revision,
@@ -341,8 +474,8 @@ export class WritingSession {
           unitType: 'paragraph',
           text: paragraphText,
           absoluteStart: paragraph.start,
-          ...(before ? { contextBefore: snapshot.text.slice(before.start, before.end) } : {}),
-          ...(after ? { contextAfter: snapshot.text.slice(after.start, after.end) } : {}),
+          ...(before ? { contextBefore: trimContextBefore(snapshot.text.slice(before.start, before.end)) } : {}),
+          ...(after ? { contextAfter: trimContextAfter(snapshot.text.slice(after.start, after.end)) } : {}),
         });
       }
     }
@@ -350,17 +483,14 @@ export class WritingSession {
     if (!units.length) return;
     const requestId = generateUUID();
     const strategy = this.settings().invocationStrategy ?? 'batch';
-    // Batch responses are grouped by the scheduler; parallel mode sends one
-    // request per unit even when the worker pool limits concurrency.
-    const totalApiCalls = strategy === 'parallel'
-      ? units.length
-      : Math.ceil(units.length / 16);
     this.pending.set(requestId, {
       kind: 'units',
       revision: this.cache.revision,
       remaining: new Set(units.map((unit) => unit.unitId)),
-      totalApiCalls: Math.max(1, totalApiCalls),
-      apiCallsDone: 0,
+      // Parallel mode sends exactly one API call per unit. Batch count depends
+      // on context-aware sizing in the background, so do not show misleading
+      // request progress for that mode.
+      ...(strategy === 'parallel' ? { totalApiCalls: units.length, apiCallsDone: 0 } : {}),
     });
     this.publish(this.cache);
     this.request({
@@ -375,18 +505,18 @@ export class WritingSession {
 
   private previousSentenceText(paragraph: DocumentCache['paragraphs'][number], index: number, text: string): string | undefined {
     const local = paragraph.sentences[index - 1];
-    if (local) return text.slice(local.start, local.end);
+    if (local) return trimContextBefore(text.slice(local.start, local.end));
     const previous = this.cache?.paragraphs[this.cache.paragraphs.indexOf(paragraph) - 1];
     const sentence = previous?.sentences.at(-1);
-    return sentence ? text.slice(sentence.start, sentence.end) : undefined;
+    return sentence ? trimContextBefore(text.slice(sentence.start, sentence.end)) : undefined;
   }
 
   private nextSentenceText(paragraph: DocumentCache['paragraphs'][number], index: number, text: string): string | undefined {
     const local = paragraph.sentences[index + 1];
-    if (local) return text.slice(local.start, local.end);
+    if (local) return trimContextAfter(text.slice(local.start, local.end));
     const next = this.cache?.paragraphs[this.cache.paragraphs.indexOf(paragraph) + 1];
     const sentence = next?.sentences[0];
-    return sentence ? text.slice(sentence.start, sentence.end) : undefined;
+    return sentence ? trimContextAfter(text.slice(sentence.start, sentence.end)) : undefined;
   }
 
   accept(response: AnalysisResponse): void {
@@ -421,35 +551,48 @@ export class WritingSession {
       units: expected,
     });
 
+    // Index units once so accept is O(paragraphs + responseUnits) instead of
+    // O(responseUnits × paragraphs): every batch response used to scan the
+    // whole document per rejected/valid unit, which dominated CPU while a
+    // long document was being analyzed.
+    const unitById = new Map<string, { paragraph: DocumentCache['paragraphs'][number]; sentence?: DocumentCache['paragraphs'][number]['sentences'][number] }>();
+    for (const paragraph of this.cache.paragraphs) {
+      unitById.set(paragraph.id, { paragraph });
+      for (const sentence of paragraph.sentences) {
+        unitById.set(sentence.id, { paragraph, sentence });
+      }
+    }
+
     for (const rejectedId of validated.rejected) {
       if (rejectedId === 'response' || rejectedId === 'unit') continue;
-      for (const paragraph of this.cache.paragraphs) {
-        if (paragraph.id === rejectedId && paragraph.status === 'queued') paragraph.status = 'error';
-        const sentence = paragraph.sentences.find((item) => item.id === rejectedId);
-        if (sentence?.status === 'queued') sentence.status = 'error';
+      const hit = unitById.get(rejectedId);
+      if (!hit) continue;
+      if (hit.sentence) {
+        if (hit.sentence.status === 'queued') hit.sentence.status = 'error';
+      } else if (hit.paragraph.status === 'queued') {
+        hit.paragraph.status = 'error';
       }
     }
 
     for (const unit of validated.valid) {
-      for (const paragraph of this.cache.paragraphs) {
-        const sentence = paragraph.sentences.find((item) => item.id === unit.unitId);
-        const base = sentence?.start ?? (paragraph.id === unit.unitId ? paragraph.start : 0);
-        const issues = unit.issues.map((issue) => ({
-          ...issue,
-          start: issue.start + base,
-          end: issue.end + base,
-        }));
-        if (sentence) {
-          sentence.localIssues = issues.filter((issue) => issue.scope === 'local');
-          sentence.sentenceIssue = issues.find((issue) => issue.scope === 'sentence');
-          sentence.status = 'analyzed';
-          sentence.analysisRevision = this.cache.revision;
-        }
-        if (paragraph.id === unit.unitId) {
-          paragraph.issue = issues[0];
-          paragraph.status = 'analyzed';
-          paragraph.analysisRevision = this.cache.revision;
-        }
+      const hit = unitById.get(unit.unitId);
+      if (!hit) continue;
+      const { paragraph, sentence } = hit;
+      const base = sentence?.start ?? paragraph.start;
+      const issues = unit.issues.map((issue) => ({
+        ...issue,
+        start: issue.start + base,
+        end: issue.end + base,
+      }));
+      if (sentence) {
+        sentence.localIssues = issues.filter((issue) => issue.scope === 'local');
+        sentence.sentenceIssue = issues.find((issue) => issue.scope === 'sentence');
+        sentence.status = 'analyzed';
+        sentence.analysisRevision = this.cache.revision;
+      } else {
+        paragraph.issue = issues[0];
+        paragraph.status = 'analyzed';
+        paragraph.analysisRevision = this.cache.revision;
       }
     }
 
@@ -468,17 +611,12 @@ export class WritingSession {
       this.cache.analysisRevision = this.cache.revision;
     }
 
-    pending.apiCallsDone = Math.min(pending.apiCallsDone + 1, pending.totalApiCalls);
+    pending.apiCallsDone = pending.totalApiCalls === undefined
+      ? undefined
+      : Math.min((pending.apiCallsDone ?? 0) + 1, pending.totalApiCalls);
     for (const unit of response.units) pending.remaining.delete(unit.unitId);
     if (pending.remaining.size === 0) {
       this.pending.delete(response.requestId);
-    } else {
-      if (pending.apiCallsDone >= pending.totalApiCalls) {
-        // All expected batch responses arrived; units still missing were
-        // omitted by the model, so treat them as analyzed with no findings.
-        this.resolvePendingUnits(pending);
-        this.pending.delete(response.requestId);
-      }
     }
     this.publish(this.cache);
   }
@@ -558,13 +696,18 @@ export class WritingSession {
 
   viewState() {
     if (!this.cache) return undefined;
-    const caret = this.adapter.readSnapshot().selection?.start ?? -1;
+    // Prefer the snapshot already read for the current input/selection event
+    // (see onSelectionChange) over rebuilding the editor text model again.
+    const caret = (this.snapshotHint ?? this.adapter.readSnapshot()).selection?.start ?? -1;
     const issues = this.issues();
     const item = (scope: 'sentence' | 'paragraph') =>
       issues.find((issue) => issue.scope === scope && issue.start <= caret && caret <= issue.end);
     const currentParagraph = this.cache.paragraphs.find((paragraph) =>
       paragraph.start <= caret && caret <= paragraph.end,
-    );
+    ) ?? (caret >= 0 ? this.cache.paragraphs.find((paragraph, idx, arr) => {
+      const next = arr[idx + 1];
+      return Boolean(next && caret >= paragraph.end && caret < next.start);
+    }) : undefined);
     const currentParagraphIssues = currentParagraph
       ? issues.filter((issue) => issue.start >= currentParagraph.start && issue.end <= currentParagraph.end)
       : [];
@@ -581,9 +724,9 @@ export class WritingSession {
       counts: countIssues(this.cache),
       ...this.progressState(),
       batchPreviews: {
-        local: issues.filter((issue) => issue.scope === 'local').map(projectPreview),
-        sentence: issues.filter((issue) => issue.scope === 'sentence').map(projectPreview),
-        paragraph: issues.filter((issue) => issue.scope === 'paragraph').map(projectPreview),
+        local: issues.filter((issue) => issue.scope === 'local').slice(0, BATCH_PREVIEW_LIMIT).map(projectPreview),
+        sentence: issues.filter((issue) => issue.scope === 'sentence').slice(0, BATCH_PREVIEW_LIMIT).map(projectPreview),
+        paragraph: issues.filter((issue) => issue.scope === 'paragraph').slice(0, BATCH_PREVIEW_LIMIT).map(projectPreview),
       },
       currentSentence: project(item('sentence')),
       currentParagraph: project(currentParagraph?.issue),
@@ -608,13 +751,18 @@ export class WritingSession {
   }
 
   private progressState(): { analysisDone?: number; analysisTotal?: number } {
-    // Find the active units pending request (there is at most one at a time)
     for (const pending of this.pending.values()) {
-      if (pending.kind === 'units' && pending.totalApiCalls > 1) {
+      if (pending.kind === 'units' && (pending.totalApiCalls ?? 0) > 1) {
         return { analysisDone: pending.apiCallsDone, analysisTotal: pending.totalApiCalls };
       }
     }
     return {};
+  }
+
+  /** Cache-only projected status (no snapshot read): for cheap dot updates. */
+  status(): DetectionStatus {
+    if (!this.cache) return 'never';
+    return this.projectedStatus();
   }
 
   private projectedStatus(): DetectionStatus {
@@ -629,4 +777,29 @@ export class WritingSession {
     if (this.cache.status === 'error' || childStatuses.some((status) => status === 'error')) return 'error';
     return this.cache.status;
   }
+}
+
+function trimContextBefore(text: string): string {
+  return text.length <= CONTEXT_CHARACTER_LIMIT ? text : text.slice(-CONTEXT_CHARACTER_LIMIT);
+}
+
+function trimContextAfter(text: string): string {
+  return text.length <= CONTEXT_CHARACTER_LIMIT ? text : text.slice(0, CONTEXT_CHARACTER_LIMIT);
+}
+
+function binarySearchInterval<T extends { start: number; end: number }>(items: readonly T[], offset: number): T | undefined {
+  let low = 0;
+  let high = items.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const item = items[mid];
+    if (offset < item.start) {
+      high = mid - 1;
+    } else if (offset > item.end) {
+      low = mid + 1;
+    } else {
+      return item;
+    }
+  }
+  return undefined;
 }

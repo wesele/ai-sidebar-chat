@@ -25,4 +25,27 @@ describe('contenteditable canonical text', () => {
     expect(point.offset).toBe(3);
     expect(domPointToContentOffset(editor, model, point.node, point.offset)).toBe(second + 3);
   });
+
+  it('separates table cells into distinct paragraph boundaries without concatenation', () => {
+    const editor = document.createElement('div');
+    editor.innerHTML = [
+      '<table>',
+      '  <thead><tr><th>Item</th><th>Priority</th><th>Remark</th></tr></thead>',
+      '  <tbody>',
+      '    <tr><td>Plan</td><td>The</td><td>Life</td></tr>',
+      '    <tr><td>Eat</td><td></td><td></td></tr>',
+      '  </tbody>',
+      '</table>',
+    ].join('');
+    const model = buildContenteditableTextModel(editor);
+    expect(model.text).toBe('Item\n\nPriority\n\nRemark\n\nPlan\n\nThe\n\nLife\n\nEat');
+    expect(segmentParagraphs(model.text)).toHaveLength(7);
+
+    // Verify DOM point mapping inside a table cell
+    const planIndex = model.text.indexOf('Plan');
+    const point = contentOffsetToDomPoint(model, planIndex + 2)!;
+    expect(point.node.textContent).toBe('Plan');
+    expect(point.offset).toBe(2);
+    expect(domPointToContentOffset(editor, model, point.node, point.offset)).toBe(planIndex + 2);
+  });
 });

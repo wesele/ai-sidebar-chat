@@ -947,6 +947,45 @@ function scrollToBottom() {
   els.chatContainer.scrollTop = els.chatContainer.scrollHeight;
 }
 
+// Scroll-follow during streaming: only stick to the bottom while the user is
+// already near it, so reading earlier history isn't yanked away (and no
+// forced scroll layout is paid when the user scrolled up).
+function scrollToBottomIfFollowing() {
+  const el = els.chatContainer;
+  if (!el) return;
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+  if (distance < 120) {
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+// Coalesced streaming paint: tokens can arrive dozens of times per second and
+// each chunk used to trigger a full innerHTML re-parse plus a forced scroll
+// layout of the whole accumulated message — O(n^2) work that freezes the tab
+// on long (especially thinking-model) generations. At most one DOM update is
+// now performed per animation frame no matter how many chunks arrived.
+const pendingStreamPaints = new Map();
+let streamPaintFrame = 0;
+function flushStreamPaints() {
+  streamPaintFrame = 0;
+  for (const [div, msg] of pendingStreamPaints) {
+    try {
+      if (div.isConnected) div.innerHTML = renderMessageContent(msg);
+    } catch (e) {}
+  }
+  pendingStreamPaints.clear();
+  scrollToBottomIfFollowing();
+}
+function scheduleStreamPaint(msgDiv, assistantMsg) {
+  pendingStreamPaints.set(msgDiv, assistantMsg);
+  if (streamPaintFrame) return;
+  if (typeof requestAnimationFrame === 'function') {
+    streamPaintFrame = requestAnimationFrame(flushStreamPaints);
+  } else {
+    flushStreamPaints();
+  }
+}
+
 // --- Chat Logic ---
 
 async function sendMessage() {
@@ -993,7 +1032,35 @@ async function sendMessage() {
   let firstTokenTime = null;
   let thinkEndTime = null;
   let usage = null;
-  let estimatedTokens = 0; 
+  let estimatedTokens = 0;
+
+  // Passive stall hint (never aborts): slow thinking models legitimately go
+  // silent for a long time before the first token. Without any feedback the
+  // generation looks frozen and users re-send, stacking concurrent load.
+  let stallTimer = 0;
+  const clearStallTimer = () => {
+    if (stallTimer) {
+      clearTimeout(stallTimer);
+      stallTimer = 0;
+    }
+  };
+  const removeStallNote = () => {
+    try {
+      msgDiv.querySelector('[data-stall-note]')?.remove();
+    } catch (e) {}
+  };
+  stallTimer = setTimeout(() => {
+    stallTimer = 0;
+    if (!isGenerating) return;
+    try {
+      if (msgDiv.querySelector('[data-stall-note]')) return;
+      const note = document.createElement('div');
+      note.dataset.stallNote = 'true';
+      note.style.cssText = 'color:#888;font-size:12px;margin-top:4px;';
+      note.textContent = '模型仍在生成中，请稍候…';
+      msgDiv.append(note);
+    } catch (e) {}
+  }, 30000);
   
   try {
     const provider = state.providers.find(p => p.id === ctx.modelProviderId);
@@ -1046,6 +1113,12 @@ async function sendMessage() {
         await streamCompletion(provider, ctx.modelId, messages, ctx, customParams, 
             (chunk, chunkUsage, isReasoning) => {
                 const now = Date.now();
+
+                // First visible activity: the stall hint (if shown) is obsolete.
+                if (chunk && stallTimer) {
+                    clearStallTimer();
+                    removeStallNote();
+                }
                 
                 // TTFT
                 if (!firstTokenTime && (chunk || chunkUsage || isReasoning)) { 
@@ -1079,9 +1152,13 @@ async function sendMessage() {
                 if (chunkUsage) {
                     usage = chunkUsage;
                 }
-                
-                msgDiv.innerHTML = renderMessageContent(assistantMsg);
-                scrollToBottom();
+
+                // Usage-only chunks (e.g. Gemini usageMetadata) change nothing
+                // visible: skip the expensive re-render entirely. Content
+                // chunks are painted coalesced, at most once per frame.
+                if (chunk) {
+                    scheduleStreamPaint(msgDiv, assistantMsg);
+                }
             }, 
             abortController.signal
         );
@@ -1109,6 +1186,10 @@ async function sendMessage() {
         };
         
         msgDiv.innerHTML = renderMessageContent(assistantMsg);
+        // Drop any still-scheduled streaming paint for this message: the
+        // final render above supersedes it (and must not be overwritten by a
+        // stale frame, nor wipe the error/interrupted suffixes below).
+        pendingStreamPaints.delete(msgDiv);
         msgDiv.dataset.index = ctx.messages.length;
         
         ctx.messages.push(assistantMsg);
@@ -1116,6 +1197,7 @@ async function sendMessage() {
     }
 
   } catch (err) {
+    pendingStreamPaints.delete(msgDiv);
     if (err.name === 'AbortError') {
        msgDiv.innerHTML += '<br><i>[已中断]</i>';
        assistantMsg.content += '\n[已中断]';
@@ -1126,6 +1208,8 @@ async function sendMessage() {
         msgDiv.innerHTML += `<br><span style="color:red">Error: ${escapeHtml(err.message)}</span>`;
      }
   } finally {
+    clearStallTimer();
+    removeStallNote();
     sendCount--;
     if (sendCount <= 0) {
       sendCount = 0;

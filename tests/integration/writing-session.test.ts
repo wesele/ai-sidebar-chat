@@ -30,6 +30,89 @@ describe('WritingSession races', () => {
     vi.useRealTimers();
   });
 
+  it('cancels queued work while hidden and resumes detection once visible', () => {
+    vi.useFakeTimers();
+    const text = 'I recieved it.';
+    const requests: Array<{ requestId: string }> = [];
+    const cancelled: string[] = [];
+    const adapter = {
+      element: document.createElement('textarea'),
+      kind: 'textarea',
+      readSnapshot: () => createSnapshot({
+        editorId: 'e', documentRevision: 1, sourceKind: 'textarea', source: text,
+        selection: { start: text.length, end: text.length }, composing: false, createdAt: 0,
+      }),
+      getCaretGeometry: () => null,
+      getRangeGeometry: () => [],
+      replaceRanges: () => ({ applied: 0, skipped: 0 }),
+      observe: () => () => undefined,
+    } as unknown as EditorAdapter;
+    const session = new WritingSession(
+      adapter,
+      request => requests.push(request),
+      () => undefined,
+      requestId => cancelled.push(requestId),
+      () => undefined,
+      () => ({ hasModel: true, fullDocumentCharacterLimit: 20_000, targetLanguage: 'EN' }),
+    );
+
+    session.start();
+    vi.advanceTimersByTime(1_500);
+    expect(requests).toHaveLength(1);
+    session.pause();
+    expect(cancelled).toEqual([requests[0].requestId]);
+    vi.advanceTimersByTime(10_000);
+    expect(requests).toHaveLength(1);
+
+    session.resume();
+    vi.advanceTimersByTime(1_500);
+    expect(requests).toHaveLength(2);
+    session.stop();
+    vi.useRealTimers();
+  });
+
+  it('ignores selection changes after focus leaves the active editor', () => {
+    let snapshots = 0;
+    const editor = document.createElement('textarea');
+    const other = document.createElement('textarea');
+    document.body.append(editor, other);
+    other.focus();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    const adapter = {
+      element: editor,
+      kind: 'textarea',
+      readSnapshot: () => {
+        snapshots += 1;
+        return createSnapshot({
+          editorId: 'e', documentRevision: 1, sourceKind: 'textarea', source: 'Text.',
+          selection: { start: 1, end: 1 }, composing: false, createdAt: 0,
+        });
+      },
+      getCaretGeometry: () => null,
+      getRangeGeometry: () => [],
+      replaceRanges: () => ({ applied: 0, skipped: 0 }),
+      observe: () => () => undefined,
+    } as unknown as EditorAdapter;
+    const session = new WritingSession(
+      adapter,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      () => undefined,
+      () => ({ hasModel: false, fullDocumentCharacterLimit: 20_000, targetLanguage: 'EN' }),
+    );
+    session.start();
+    const baseSnapshots = snapshots;
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(snapshots).toBe(baseSnapshots);
+    session.stop();
+    document.body.replaceChildren();
+    vi.unstubAllGlobals();
+  });
+
   it('does not trigger detection when moving cursor up and down without entering text', () => {
     vi.useFakeTimers();
     const text = 'First line.\nSecond line.';

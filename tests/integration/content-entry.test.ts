@@ -68,7 +68,11 @@ describe('content entry settings updates', () => {
        type: 'SETTINGS_UPDATED',
        correlationId: 'initial-settings',
        payload: { ...settings, writingStyle: 'practical' },
-     });
+      });
+     const editor = document.querySelector<HTMLTextAreaElement>('#editor')!;
+     editor.value = 'A changed sentence to check.';
+     editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
+     vi.runOnlyPendingTimers();
      await vi.waitFor(() => expect(sent.some((message) => message.type === 'ANALYSIS_REQUESTED')).toBe(true));
 
     const request = sent.find((message): message is Extract<RuntimeMessage, { type: 'ANALYSIS_REQUESTED' }> => message.type === 'ANALYSIS_REQUESTED');
@@ -103,8 +107,8 @@ describe('content entry settings updates', () => {
     await Promise.resolve();
     vi.runOnlyPendingTimers();
 
-    expect(sent.filter((message) => message.type === 'ANALYSIS_REQUESTED')).toHaveLength(requestCount + 1);
-    expect(sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED')).toHaveLength(fullCount + 1);
+    expect(sent.filter((message) => message.type === 'ANALYSIS_REQUESTED')).toHaveLength(requestCount);
+    expect(sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED')).toHaveLength(fullCount);
   });
 
   it('restarts full detection immediately when the target language changes', async () => {
@@ -150,5 +154,35 @@ describe('content entry settings updates', () => {
 
     expect(sent.filter((message) => message.type === 'ANALYSIS_REQUESTED')).toHaveLength(requestCount + 1);
     expect(sent.filter((message) => message.type === 'FULL_ANALYSIS_REQUESTED')).toHaveLength(fullCount + 1);
+  });
+
+  it('requests model status only on the panel-open edge to avoid a message loop', async () => {
+    // The background echoes PANEL_CONNECTION_CHANGED(open=true) in its
+    // WRITING_MODEL_STATUS_REQUEST reply. Requesting status on every open=true
+    // message would create an infinite content↔background ping-pong.
+    const openPanel = (correlationId: string): void => dispatch({
+      v: 1,
+      type: 'PANEL_CONNECTION_CHANGED',
+      correlationId,
+      payload: { tabId: 1, open: true },
+    });
+    const closePanel = (correlationId: string): void => dispatch({
+      v: 1,
+      type: 'PANEL_CONNECTION_CHANGED',
+      correlationId,
+      payload: { tabId: 1, open: false },
+    });
+
+    openPanel('open-1');
+    openPanel('open-2');
+    openPanel('open-3');
+    await Promise.resolve();
+    expect(sent.filter((message) => message.type === 'WRITING_MODEL_STATUS_REQUEST')).toHaveLength(1);
+
+    // Close → reopen re-arms the edge so a real panel reconnect still syncs.
+    closePanel('close-1');
+    openPanel('open-4');
+    await Promise.resolve();
+    expect(sent.filter((message) => message.type === 'WRITING_MODEL_STATUS_REQUEST')).toHaveLength(2);
   });
 });

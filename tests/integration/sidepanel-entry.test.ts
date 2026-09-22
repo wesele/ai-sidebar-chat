@@ -133,10 +133,18 @@ describe('side-panel tab and batch correlation binding', () => {
 
   it('reconnects the writing assistant when the active tab changes', () => {
     sent.length = 0;
+    activeTabId = 11;
+    activated?.(11);
+    sent.length = 0;
     activated?.(22);
-    expect(sent.at(-1)).toMatchObject({
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatchObject({
       type: 'PANEL_CONNECTION_CHANGED',
-      payload: { open: true },
+      payload: { tabId: 11, open: false },
+    });
+    expect(sent[1]).toMatchObject({
+      type: 'PANEL_CONNECTION_CHANGED',
+      payload: { tabId: 22, open: true },
     });
   });
 });

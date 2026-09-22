@@ -1,7 +1,28 @@
 const blocks = new Set([
-  'ADDRESS', 'ARTICLE', 'BLOCKQUOTE', 'DIV', 'FIGCAPTION', 'H1', 'H2', 'H3',
-  'H4', 'H5', 'H6', 'LI', 'P', 'PRE', 'SECTION',
+  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'CAPTION', 'DD', 'DETAILS', 'DIV',
+  'DL', 'DT', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5',
+  'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION',
+  'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'UL',
 ]);
+
+const structuralContainers = new Set([
+  'COLGROUP', 'DL', 'OL', 'TABLE', 'TBODY', 'TFOOT', 'THEAD', 'TR', 'UL',
+]);
+
+function isIgnorableWhitespace(node: Node): boolean {
+  if (node.nodeType !== Node.TEXT_NODE || (node.textContent ?? '').trim() !== '') {
+    return false;
+  }
+  const parent = node.parentElement;
+  if (!parent) return false;
+  if (structuralContainers.has(parent.tagName)) {
+    return true;
+  }
+  const prev = node.previousSibling;
+  const next = node.nextSibling;
+  const isBlock = (n: Node | null): boolean => n instanceof HTMLElement && blocks.has(n.tagName);
+  return isBlock(prev) || isBlock(next);
+}
 
 export interface ContenteditableTextSegment {
   node: Text;
@@ -29,6 +50,7 @@ export function buildContenteditableTextModel(root: HTMLElement): Contenteditabl
   };
   const visit = (node: Node): void => {
     if (node.nodeType === Node.TEXT_NODE) {
+      if (isIgnorableWhitespace(node)) return;
       const value = node.textContent ?? '';
       const start = output.length;
       output += value;
@@ -75,17 +97,26 @@ export function domPointToContentOffset(
   if (!root.contains(node) && node !== root) return undefined;
   if (node.nodeType === Node.TEXT_NODE) {
     const segment = model.segments.find((item) => item.node === node);
-    return segment ? segment.start + Math.max(0, Math.min(offset, segment.end - segment.start)) : undefined;
+    if (segment) return segment.start + Math.max(0, Math.min(offset, segment.node.textContent?.length ?? 0));
+    const following = model.segments.find((item) => (node.compareDocumentPosition(item.node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+    if (following) return following.start;
+    const preceding = model.segments.filter((item) => (node.compareDocumentPosition(item.node) & Node.DOCUMENT_POSITION_PRECEDING) !== 0);
+    if (preceding.length > 0) return preceding.at(-1)!.end;
+    return model.text.length;
   }
   const container = node as Element;
   if (offset >= container.childNodes.length) {
     const contained = model.segments.filter((segment) => container.contains(segment.node));
-    return contained.at(-1)?.end ?? model.text.length;
+    if (contained.length > 0) return contained.at(-1)!.end;
+    const next = model.segments.find((segment) => (container.compareDocumentPosition(segment.node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+    return next ? next.start : model.text.length;
   }
   const child = container.childNodes[Math.max(0, offset)];
   if (child) {
     const next = model.segments.find((segment) => child === segment.node || child.contains(segment.node));
     if (next) return next.start;
+    const following = model.segments.find((segment) => (child.compareDocumentPosition(segment.node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+    return following ? following.start : model.text.length;
   }
   return model.text.length;
 }

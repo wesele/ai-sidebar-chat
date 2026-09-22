@@ -16,6 +16,7 @@ async function init(): Promise<void> {
   const completedBatch = new Map<number, Extract<RuntimeMessage, { type: 'APPLY_RESULT' }>['payload']>();
 
   let isMainTab = false;
+  let connectedTabId: number | undefined;
   try {
     const curTab = await runtime.tabs.current?.();
     if (curTab?.id !== undefined) {
@@ -25,14 +26,24 @@ async function init(): Promise<void> {
     isMainTab = false;
   }
 
-  const notifyPanelConnection = (open: boolean): void => {
+  const notifyPanelConnection = (open: boolean, tabId = connectedTabId): void => {
     if (isMainTab) return;
+    if (tabId === undefined) return;
     send({
       v: 1,
       type: 'PANEL_CONNECTION_CHANGED',
       correlationId: crypto.randomUUID(),
-      payload: { open },
+      payload: { tabId, open },
     });
+  };
+  const connectPanelToTab = (tabId: number): void => {
+    if (connectedTabId === tabId) {
+      notifyPanelConnection(true, tabId);
+      return;
+    }
+    if (connectedTabId !== undefined) notifyPanelConnection(false, connectedTabId);
+    connectedTabId = tabId;
+    notifyPanelConnection(true, tabId);
   };
   const panel = new WritingAssistantPanel(
     writing,
@@ -130,18 +141,27 @@ async function init(): Promise<void> {
   runtime.messaging.onMessage((message, sender) => {
     if (message.type === 'EDITOR_STATE_CHANGED') {
       const sourceTabId = sender.tab?.id;
-      if (sourceTabId !== undefined) void runtime.tabs.active()
-        .then((active) => {
-          if (active?.id === sourceTabId) {
-            panel.setState(message.payload, sourceTabId);
-            const completed = completedBatch.get(sourceTabId);
-            if (completed?.editorId === message.payload.editorId) {
-              completedBatch.delete(sourceTabId);
-              panel.setApplyResult(completed);
-            }
+      const applyState = (tabId?: number): void => {
+        panel.setState(message.payload, tabId);
+        if (tabId !== undefined) {
+          const completed = completedBatch.get(tabId);
+          if (completed?.editorId === message.payload.editorId) {
+            completedBatch.delete(tabId);
+            panel.setApplyResult(completed);
           }
-        })
-        .catch(() => undefined);
+        }
+      };
+      if (sourceTabId !== undefined && sender.tab?.active) {
+        applyState(sourceTabId);
+      } else {
+        void runtime.tabs.active()
+          .then((active) => {
+            if (sourceTabId === undefined || active?.id === sourceTabId || active === undefined) {
+              applyState(sourceTabId ?? active?.id);
+            }
+          })
+          .catch(() => undefined);
+      }
     }
     else if (message.type === 'PROVIDERS_PUBLIC') panel.setProviders(message.payload.providers);
     else if (message.type === 'APPLY_RESULT') {
@@ -161,11 +181,15 @@ async function init(): Promise<void> {
   });
   runtime.tabs.onActivated?.((tabId) => {
     panel.clearState(tabId);
-    notifyPanelConnection(true);
+    connectPanelToTab(tabId);
   });
   send({ v: 1, type: 'PROVIDERS_REQUEST', correlationId: crypto.randomUUID(), payload: {} });
   if (!isMainTab) {
-    notifyPanelConnection(true);
+    void runtime.tabs.active()
+      .then((tab) => {
+        if (tab) connectPanelToTab(tab.id);
+      })
+      .catch(() => undefined);
     const reannouncePanel = (): void => notifyPanelConnection(true);
     window.addEventListener('focus', reannouncePanel);
     window.addEventListener('pageshow', reannouncePanel);

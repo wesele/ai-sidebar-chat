@@ -277,7 +277,8 @@ describe('analysis transport', () => {
     expect(String(fetcher.mock.calls[0][0])).toBe(
       'https://example.test/v1/models/model%2Fa:generateContent?key=secret',
     );
-    expect(fetcher.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(fetcher.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    expect(fetcher.mock.calls[0][1].signal).not.toBe(controller.signal);
     await expect(transport.full({
       schemaVersion: '1', requestId: 'f', documentRevision: 1, text: 'Document.',
     })).resolves.toEqual(full);
@@ -289,6 +290,41 @@ describe('analysis transport', () => {
     await expect(transport.analyze({
       schemaVersion: '1', requestId: 'json', documentRevision: 1, targetLanguage: 'en', units: [],
     })).rejects.toMatchObject({ code: 'EMPTY_RESPONSE' });
+  });
+
+  it('aborts a Gemini request at the 60-second deadline and exposes TIMEOUT', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        const abort = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        if (init?.signal?.aborted) abort();
+        else init?.signal?.addEventListener('abort', abort, { once: true });
+      }));
+      const transport = new GeminiTransport({ ...provider, kind: 'gemini' }, fetcher as typeof fetch);
+      const pending = transport.analyze({
+        schemaVersion: '1', requestId: 'gemini-timeout', documentRevision: 1, targetLanguage: 'EN', units: [],
+      });
+      const assertion = expect(pending).rejects.toMatchObject({ code: 'TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(WRITING_REQUEST_TIMEOUT_MS);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('maps a user-aborted Gemini request to CANCELLED instead of hanging or misreporting', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const abort = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      if (init?.signal?.aborted) abort();
+      else init?.signal?.addEventListener('abort', abort, { once: true });
+    }));
+    const transport = new GeminiTransport({ ...provider, kind: 'gemini' }, fetcher as typeof fetch);
+    const controller = new AbortController();
+    const pending = transport.analyze({
+      schemaVersion: '1', requestId: 'gemini-cancel', documentRevision: 1, targetLanguage: 'EN', units: [],
+    }, controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: 'CANCELLED' });
   });
 
   it('uses a Gemini function call when structured output is enabled', async () => {

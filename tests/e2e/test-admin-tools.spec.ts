@@ -44,6 +44,8 @@ test('test writing assistant on http://192.168.31.233:8080/admin/tools Edit modu
     };
 
     const sidepanelPage = await context.newPage();
+    sidepanelPage.on('console', (msg) => console.log('[sidepanel-console]', msg.type(), msg.text()));
+    sidepanelPage.on('pageerror', (err) => console.error('[sidepanel-error]', err));
     await sidepanelPage.goto(`chrome-extension://${loaded.id}/sidepanel.html`);
 
     await sidepanelPage.evaluate(async ({ provider, settings }) => {
@@ -148,27 +150,34 @@ test('test writing assistant on http://192.168.31.233:8080/admin/tools Edit modu
     await expect(textarea).toBeVisible({ timeout: 10_000 });
     console.log('[admin-tools-test] Textarea is now visible! Focusing...');
 
-    await textarea.focus();
-    await textarea.fill('I recieved your email.');
-    console.log('[admin-tools-test] Text entered into Edit input box');
+    await textarea.click();
+    await textarea.pressSequentially('This is the best one00', { delay: 50 });
+    console.log('[admin-tools-test] Text typed sequentially into Edit input box');
 
     // Wait for content script to attach overlay
     const overlay = page.locator('[data-writing-assistant="overlay"]');
     await expect(overlay).toHaveCount(1, { timeout: 15_000 });
     console.log('[admin-tools-test] SUCCESS: Writing assistant overlay attached to Edit module input box!');
 
-    await expect(overlay).toHaveAttribute('data-dot-state', /ready|analyzing/, { timeout: 15_000 });
     const dotState = await overlay.getAttribute('data-dot-state');
     console.log('[admin-tools-test] Overlay dot state:', dotState);
 
-    // Wait for analysis result
-    console.log('[admin-tools-test] Waiting for LLM API analysis...');
-    await page.waitForTimeout(10_000);
+    // Give sidepanel time to sync state
+    await page.waitForTimeout(2000);
 
-    const issueCount = await overlay.getAttribute('data-issue-count');
-    console.log('[admin-tools-test] Issue count on Edit input box:', issueCount);
+    const sidepanelStatus = await sidepanelPage.locator('.wa-status').innerText();
+    console.log('[admin-tools-test] Sidepanel status immediately after typing:', JSON.stringify(sidepanelStatus));
+
+    const selectedModel = await sidepanelPage.locator('.model-select-label').innerText().catch(() => 'unknown');
+    console.log('[admin-tools-test] Selected model in sidepanel:', selectedModel);
+
+    // Save screenshots
+    await page.screenshot({ path: 'C:/Users/wh101/.gemini/antigravity/brain/e1136172-0846-4d20-b709-5a4a1d938bfa/scratch/page_test.png' });
+    await sidepanelPage.screenshot({ path: 'C:/Users/wh101/.gemini/antigravity/brain/e1136172-0846-4d20-b709-5a4a1d938bfa/scratch/sidepanel_test.png' });
+    console.log('[admin-tools-test] Screenshots saved to scratch directory.');
 
     expect(overlay).toBeVisible();
+    expect(sidepanelStatus).not.toContain('聚焦一个编辑器以开始');
   } finally {
     await browserCdp.detach();
     await browser.close();

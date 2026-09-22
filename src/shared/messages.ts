@@ -115,7 +115,7 @@ export type ExtensionMessage =
   } }
   | { v: 1; type: 'APPLY_RESULT'; correlationId: string; payload: ApplyResultPayload }
   | { v: 1; type: 'OPEN_SIDE_PANEL'; correlationId: string; payload: { tabId: number } }
-  | { v: 1; type: 'PANEL_CONNECTION_CHANGED'; correlationId: string; payload: { open: boolean } }
+  | { v: 1; type: 'PANEL_CONNECTION_CHANGED'; correlationId: string; payload: { tabId: number; open: boolean } }
   | { v: 1; type: 'RETRY_DETECTION'; correlationId: string; payload: { tabId?: number } }
   | { v: 1; type: 'REQUEST_FULL_ANALYSIS'; correlationId: string; payload: { tabId?: number } };
 
@@ -213,5 +213,7 @@ export function isExtensionMessage(value: unknown): value is RuntimeMessage {
   }
   if (message.type === 'RETRY_DETECTION' || message.type === 'REQUEST_FULL_ANALYSIS') return true;
   return message.type === 'PANEL_CONNECTION_CHANGED' &&
+    Number.isInteger((message.payload as { tabId?: unknown }).tabId) &&
+    (message.payload as { tabId: number }).tabId >= 0 &&
     typeof (message.payload as { open?: unknown }).open === 'boolean';
 }

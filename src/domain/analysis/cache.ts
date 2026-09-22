@@ -73,13 +73,28 @@ function matchOneToOne<T extends DraftRange>(oldUnits: T[], drafts: DraftRange[]
   const matches: Array<T | undefined> = Array.from({ length: drafts.length });
   const used = new Set<number>();
 
+  // Index old units by content hash so exact matches resolve in O(1) per
+  // draft. The previous nested loop compared every draft against every old
+  // unit (O(P^2) string comparisons per keystroke), which froze typing in
+  // long documents. Order and tie-breaking are preserved: candidates are
+  // visited in ascending old-index order with a strict less-than, exactly
+  // like the original scan.
+  const byHash = new Map<string, number[]>();
+  oldUnits.forEach((old, oldIndex) => {
+    const list = byHash.get(old.textHash);
+    if (list) list.push(oldIndex);
+    else byHash.set(old.textHash, [oldIndex]);
+  });
+
   for (let newIndex = 0; newIndex < drafts.length; newIndex += 1) {
     const draft = drafts[newIndex];
+    const candidates = byHash.get(draft.textHash);
+    if (!candidates) continue;
     let bestIndex = -1;
     let bestDistance = Number.POSITIVE_INFINITY;
-    for (let oldIndex = 0; oldIndex < oldUnits.length; oldIndex += 1) {
+    for (const oldIndex of candidates) {
       const old = oldUnits[oldIndex];
-      if (used.has(oldIndex) || old.textHash !== draft.textHash) continue;
+      if (used.has(oldIndex)) continue;
       const distance = Math.abs(old.start - draft.start);
       if (distance < bestDistance) {
         bestIndex = oldIndex;
@@ -246,30 +261,55 @@ export function createOrUpdateCache(
 
   const paragraphs = paragraphDrafts.map((draft, index): ParagraphCache => {
     const previousParagraph = matches[index];
-    const paragraphText = text.slice(draft.start, draft.end);
-    const absorbedSentences = orphaned
-      .filter((old) => overlap(old, draft) > 0)
-      .flatMap((old) => old.sentences);
-    const sentences = updateSentences(
-      [...(previousParagraph?.sentences ?? []), ...absorbedSentences],
-      draft,
-      paragraphText,
-      appliedReplacements,
-    );
     if (!previousParagraph) {
+      const paragraphText = text.slice(draft.start, draft.end);
+      const absorbedSentences = orphaned
+        .filter((old) => overlap(old, draft) > 0)
+        .flatMap((old) => old.sentences);
       return {
         id: id('p'),
         revision: 1,
         ...draft,
         status: 'dirty',
-        sentences,
+        sentences: updateSentences(absorbedSentences, draft, paragraphText, appliedReplacements),
       };
     }
-    if (previousParagraph.textHash === draft.textHash) {
+    if (previousParagraph.textHash === draft.textHash && !appliedReplacements?.length) {
+      // Fast path: identical paragraph text. Re-segmenting every sentence of
+      // every unchanged paragraph on each keystroke costs O(document) per
+      // keystroke and freezes typing in long documents. The sentences are
+      // reused with a pure offset shift, which is exactly what updateSentences
+      // would produce for identical text (same segmentation, exact matches).
       const delta = draft.start - previousParagraph.start;
       const issue = previousParagraph.issue ? updateIssueOffset(previousParagraph.issue, delta) : undefined;
-      return { ...previousParagraph, start: draft.start, end: draft.end, issue, sentences };
+      return {
+        ...previousParagraph,
+        start: draft.start,
+        end: draft.end,
+        issue,
+        sentences: delta === 0
+          ? previousParagraph.sentences
+          : previousParagraph.sentences.map((sentence) => ({
+            ...sentence,
+            start: sentence.start + delta,
+            end: sentence.end + delta,
+            localIssues: sentence.localIssues.map((local) => updateIssueOffset(local, delta)),
+            sentenceIssue: sentence.sentenceIssue
+              ? updateIssueOffset(sentence.sentenceIssue, delta)
+              : undefined,
+          })),
+      };
     }
+    const paragraphText = text.slice(draft.start, draft.end);
+    const absorbedSentences = orphaned
+      .filter((old) => overlap(old, draft) > 0)
+      .flatMap((old) => old.sentences);
+    const sentences = updateSentences(
+      [...previousParagraph.sentences, ...absorbedSentences],
+      draft,
+      paragraphText,
+      appliedReplacements,
+    );
 
     let paragraphIssue = previousParagraph.issue;
     let paragraphStatus = previousParagraph.status;

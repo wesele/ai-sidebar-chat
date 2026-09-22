@@ -11,6 +11,7 @@ import './adapters/prosemirror-adapter';
 import { TextControlAdapter } from './adapters/text-control-adapter';
 import { AnnotationRenderer, dotState } from './annotations/annotation-renderer';
 import { installEditorDiscovery } from './editor-discovery';
+import { isEligibleEditor } from './sensitive-field-policy';
 import { WritingSession } from './writing-session';
 
 const runtime = chromeRuntime();
@@ -20,6 +21,13 @@ let session: WritingSession | undefined;
 let renderer: AnnotationRenderer | undefined;
 let disposeGeometry: (() => void) | undefined;
 let lastEligible: HTMLElement | undefined;
+let currentPublish: ((cache: NonNullable<ReturnType<WritingSession['current']>>) => void) | undefined;
+let visibilityEpoch = 0;
+// Edge-trigger guard for model-status requests: PANEL_CONNECTION_CHANGED(open)
+// is replayed by the background on every WRITING_MODEL_STATUS_REQUEST reply,
+// so treating it as level-triggered creates an infinite content↔background
+// message ping-pong (high CPU / tab-switch freezes).
+let panelOpenAnnounced = false;
 import type { TargetLanguage } from '../shared/messages';
 
 let settings = {
@@ -40,6 +48,7 @@ const send = (message: RuntimeMessage): void => {
 };
 
 const stop = (): void => {
+  currentPublish = undefined;
   disposeGeometry?.();
   disposeGeometry = undefined;
   session?.stop();
@@ -60,8 +69,12 @@ const makeAdapter = (element: HTMLElement): EditorAdapter => {
 };
 
 const start = (): void => {
-  if (!initialized || !lastEligible || session || !activation.active() || !lastEligible.isConnected) return;
+  if (!initialized || document.hidden || !lastEligible || session || !activation.active() || !lastEligible.isConnected) return;
   const adapter = makeAdapter(lastEligible);
+  let publishTimer: number | undefined;
+  let publishFrame = 0;
+  let queuedCache: NonNullable<ReturnType<WritingSession['current']>> | undefined;
+  let activeSession: WritingSession | undefined;
   renderer = new AnnotationRenderer(
     () => send({
       v: 1,
@@ -79,10 +92,15 @@ const start = (): void => {
     settings.replacementTextColor,
     settings.replacementBackgroundColor,
   );
+  // Cached range geometry keyed by revision+issue set. Range rects are
+  // viewport-relative, so scroll/resize must invalidate (see refreshGeometry).
+  let lastGeometryKey: string | undefined;
+  let lastRects: DOMRect[][] | undefined;
 
   const publish = (cache: NonNullable<ReturnType<WritingSession['current']>>): void => {
-    if (!renderer || !session) return;
-    const view = session.viewState();
+    const currentSession = activeSession;
+    if (document.hidden || !renderer || !currentSession || session !== currentSession) return;
+    const view = currentSession.viewState();
     renderer.updateDot(
       adapter.getCaretGeometry(),
       dotState(
@@ -93,7 +111,35 @@ const start = (): void => {
       ),
       adapter.element.getBoundingClientRect(),
     );
-    renderer.render(session.issues(), (issue) => adapter.getRangeGeometry(issue));
+    const issues = currentSession.issues();
+    // Geometry (text-model rebuild + per-issue getClientRects) is the most
+    // expensive part of publish and is only needed when the visible issue
+    // set or the caret-independent document revision changed. Scroll/resize
+    // still must re-measure (rects are viewport-relative after filtering),
+    // so key on issues + revision and let scroll go through refreshGeometry
+    // which bumps a geometry epoch.
+    const issuesKey = issues.length === 0
+      ? '0'
+      : issues.map((issue) => `${issue.issueId}:${issue.start}:${issue.end}`).join('|');
+    const geometryKey = `${cache.revision}:${issuesKey}`;
+    let rects: DOMRect[][];
+    if (geometryKey === lastGeometryKey && lastRects) {
+      rects = lastRects;
+    } else {
+      if (typeof adapter.getRangesGeometry === 'function') {
+        try {
+          rects = adapter.getRangesGeometry(issues);
+        } catch {
+          rects = issues.map((issue) => adapter.getRangeGeometry(issue));
+        }
+      } else {
+        rects = issues.map((issue) => adapter.getRangeGeometry(issue));
+      }
+      lastGeometryKey = geometryKey;
+      lastRects = rects;
+    }
+    const rectById = new Map(issues.map((issue, index) => [issue.issueId, rects[index] ?? []] as const));
+    renderer.render(issues, (issue) => rectById.get(issue.issueId) ?? []);
     if (view) send({
       v: 1,
       type: 'EDITOR_STATE_CHANGED',
@@ -101,8 +147,44 @@ const start = (): void => {
       payload: view,
     });
   };
+  const queuePublish = (cache: NonNullable<ReturnType<WritingSession['current']>>): void => {
+    queuedCache = cache;
+    if (document.hidden) return;
+    if (publishTimer) clearTimeout(publishTimer);
+    publishTimer = window.setTimeout(() => {
+      publishTimer = undefined;
+      if (publishFrame) return;
+      publishFrame = requestAnimationFrame(() => {
+        publishFrame = 0;
+        const next = queuedCache;
+        queuedCache = undefined;
+        if (next) publish(next);
+      });
+    }, 100);
+  };
+  currentPublish = queuePublish;
 
-  session = new WritingSession(
+  // Cheap caret-only refresh for selection changes that stayed inside the
+  // same sentence/paragraph (no analysis impact): reposition the status dot
+  // without rebuilding annotations or re-rendering the side panel.
+  const refreshDotOnly = (): void => {
+    if (document.hidden || !renderer || !session) return;
+    const cache = session.current();
+    if (!cache) return;
+    const status = session.status();
+    renderer.updateDot(
+      adapter.getCaretGeometry(),
+      dotState(
+        true,
+        settings.hasModel,
+        status === 'queued' || status === 'analyzing',
+        cache.fullResult?.severity === 'none' ? undefined : cache.fullResult?.severity,
+      ),
+      adapter.element.getBoundingClientRect(),
+    );
+  };
+
+  activeSession = new WritingSession(
     adapter,
     (payload) => send({
       v: 1,
@@ -122,7 +204,7 @@ const start = (): void => {
       correlationId: requestId,
       payload: { requestId },
     }),
-    publish,
+    queuePublish,
     () => ({
       hasModel: settings.hasModel,
       fullDocumentCharacterLimit: settings.fullDocumentCharacterLimit,
@@ -131,34 +213,67 @@ const start = (): void => {
       invocationStrategy: settings.invocationStrategy,
       maxConcurrency: settings.maxConcurrency,
     }),
+    refreshDotOnly,
   );
-  session.start();
-  session.initializeBaseline();
+  session = activeSession;
+  activeSession.start();
+  activeSession.initializeBaseline();
 
   let frame = 0;
+  const onScroll = (event: Event): void => {
+    // Only refresh geometry if scroll occurs on window/document or an ancestor/descendant of the editor
+    const target = event.target;
+    if (
+      target === window ||
+      target === document ||
+      target === document.documentElement ||
+      target === document.body ||
+      (target instanceof Node && (adapter.element.contains(target) || target.contains(adapter.element)))
+    ) {
+      refreshGeometry();
+    }
+  };
   const refreshGeometry = (): void => {
-    if (frame) return;
+    if (document.hidden || frame) return;
+    // Range rects are viewport-relative: scroll/resize must force re-measure
+    // on the next publish even when revision+issues are unchanged.
+    lastGeometryKey = undefined;
+    lastRects = undefined;
+    const epoch = visibilityEpoch;
     frame = requestAnimationFrame(() => {
       frame = 0;
+      if (document.hidden || epoch !== visibilityEpoch) return;
       const cache = session?.current();
-      if (cache) publish(cache);
+      if (cache) queuePublish(cache);
     });
   };
   const resizeObserver = typeof ResizeObserver === 'undefined'
     ? undefined
     : new ResizeObserver(refreshGeometry);
   resizeObserver?.observe(adapter.element);
-  window.addEventListener('scroll', refreshGeometry, true);
+  window.addEventListener('scroll', onScroll, { capture: true, passive: true });
   window.addEventListener('resize', refreshGeometry);
   disposeGeometry = () => {
     if (frame) cancelAnimationFrame(frame);
+    if (publishTimer) clearTimeout(publishTimer);
+    if (publishFrame) cancelAnimationFrame(publishFrame);
+    publishTimer = undefined;
+    publishFrame = 0;
+    queuedCache = undefined;
+    lastGeometryKey = undefined;
+    lastRects = undefined;
     resizeObserver?.disconnect();
-    window.removeEventListener('scroll', refreshGeometry, true);
+    window.removeEventListener('scroll', onScroll, true);
     window.removeEventListener('resize', refreshGeometry);
   };
 };
 
 installEditorDiscovery((element) => {
+  if (element === lastEligible && session) {
+    const cache = session.current();
+    if (cache) currentPublish?.(cache);
+    return;
+  }
   lastEligible = element;
   stop();
   start();
@@ -198,17 +313,44 @@ void runtime.storage
     start();
   });
 
-send({
-  v: 1,
-  type: 'WRITING_MODEL_STATUS_REQUEST',
-  correlationId: generateUUID(),
-  payload: {},
+const requestModelStatus = (): void => {
+  send({
+    v: 1,
+    type: 'WRITING_MODEL_STATUS_REQUEST',
+    correlationId: generateUUID(),
+    payload: {},
+  });
+};
+
+requestModelStatus();
+
+document.addEventListener('visibilitychange', () => {
+  visibilityEpoch += 1;
+  if (document.hidden) {
+    session?.pause();
+    return;
+  }
+  session?.resume();
+  start();
+});
+
+window.addEventListener('pagehide', () => {
+  visibilityEpoch += 1;
+  session?.pause();
+});
+
+window.addEventListener('pageshow', () => {
+  if (document.hidden) return;
+  session?.resume();
+  start();
 });
 
 runtime.messaging.onMessage((message) => {
   if (message.type === 'SETTINGS_UPDATED') {
     const previousTargetLanguage = settings.targetLanguage;
+    const previousWritingStyle = settings.writingStyle;
     settings = { ...settings, ...message.payload };
+    requestModelStatus();
     const action = activation.update(settings.activationMode);
     if (action === 'stop') stop();
     else {
@@ -217,7 +359,10 @@ runtime.messaging.onMessage((message) => {
         settings.replacementTextColor,
         settings.replacementBackgroundColor,
       );
-       if ((message.payload.targetLanguage !== undefined && message.payload.targetLanguage !== previousTargetLanguage) || message.payload.writingStyle !== undefined) {
+        if (
+          (message.payload.targetLanguage !== undefined && message.payload.targetLanguage !== previousTargetLanguage) ||
+          (message.payload.writingStyle !== undefined && message.payload.writingStyle !== previousWritingStyle)
+        ) {
         session?.reanalyzeAll();
       }
       start();
@@ -252,8 +397,33 @@ runtime.messaging.onMessage((message) => {
       session?.applyIssue(message.payload.issueId);
     }
   } else if (message.type === 'PANEL_CONNECTION_CHANGED') {
-    const action = activation.panel(message.payload.open);
+    const open = message.payload.open;
+    const action = activation.panel(open);
     if (action === 'stop') stop();
     else if (action === 'start') start();
+    if (open) {
+      // Only request model status on the false→true edge. The background
+      // echoes PANEL_CONNECTION_CHANGED in its WRITING_MODEL_STATUS_REQUEST
+      // reply, so requesting on every open=true message would loop forever.
+      const edge = !panelOpenAnnounced;
+      panelOpenAnnounced = true;
+      if (edge) requestModelStatus();
+      if (session) {
+        const cache = session.current();
+        if (cache) currentPublish?.(cache);
+      } else {
+        const candidate = (lastEligible && lastEligible.isConnected)
+          ? lastEligible
+          : (document.activeElement instanceof HTMLElement && isEligibleEditor(document.activeElement))
+            ? document.activeElement
+            : undefined;
+        if (candidate) {
+          lastEligible = candidate;
+          start();
+        }
+      }
+    } else {
+      panelOpenAnnounced = false;
+    }
   }
 });

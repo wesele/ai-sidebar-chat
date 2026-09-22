@@ -1,7 +1,12 @@
 const sensitive = /pass(?:word)?|otp|one.?time|verification|credit.?card|card.?number|cvv|cvc|bank|token|secret/i;
 const nonProse = /user(?:name)?|login|handle|code|tag|label|identifier|\bid\b|slug/i;
 const excluded = new Set(['password', 'hidden', 'search', 'url', 'email', 'tel', 'number']);
-function visible(element: HTMLElement): boolean { const style = getComputedStyle(element); if (style.display === 'none' || style.visibility === 'hidden') return false; const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; }
+function visible(element: HTMLElement): boolean {
+  const style = getComputedStyle(element);
+  if (style.display === 'none' || style.visibility === 'hidden') return false;
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
 
 /**
  * Returns true when the element is a known product-specific rich-text editor

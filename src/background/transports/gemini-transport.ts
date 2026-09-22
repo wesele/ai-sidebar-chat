@@ -5,7 +5,7 @@ import type {
   FullDocumentResponse,
 } from '../../shared/schemas';
 import type { ProviderConfig } from './openai-transport';
-import { normalizeAnalysisResponse, normalizeFullDocumentResponse } from './openai-transport';
+import { createDeadline, normalizeAnalysisResponse, normalizeFullDocumentResponse } from './openai-transport';
 import { fullAnalysisPrompt, unitAnalysisPrompt } from '../analysis-prompt';
 import { getThinkingRequestPatch, type ThinkingMode } from '../../shared/thinking';
 
@@ -134,18 +134,33 @@ export class GeminiTransport {
     };
 
     let response: Response;
+    const deadline = createDeadline(signal);
     try {
       response = await this.fetcher(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
-        signal,
+        signal: deadline.signal,
       });
     } catch (cause) {
+      if (deadline.timedOut) {
+        const err = new Error(`Model request exceeded 60000ms`);
+        (err as unknown as { code: string; cause: unknown }).code = 'TIMEOUT';
+        (err as { cause: unknown }).cause = cause;
+        throw err;
+      }
+      if (signal?.aborted) {
+        const err = new Error('Model request was cancelled');
+        (err as unknown as { code: string; cause: unknown }).code = 'CANCELLED';
+        (err as { cause: unknown }).cause = cause;
+        throw err;
+      }
       const err = new Error(`Network error: ${(cause as Error).message ?? cause}`);
       (err as unknown as { code: string; cause: unknown }).code = 'NETWORK';
       (err as { cause: unknown }).cause = cause;
       throw err;
+    } finally {
+      deadline.dispose();
     }
 
     if (!response.ok) {

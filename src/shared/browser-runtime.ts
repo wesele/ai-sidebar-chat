@@ -23,8 +23,10 @@ export interface SidePanelCapability { open(tabId?: number): Promise<void>; setA
 export interface TabCapability {
   active(): Promise<{ id: number } | undefined>;
   current?(): Promise<{ id: number } | undefined>;
-  send(tabId: number, message: RuntimeMessage): Promise<void>;
+  send(tabId: number, message: RuntimeMessage, target?: { frameId?: number }): Promise<void>;
   onActivated?(listener: (tabId: number) => void): void;
+  onUpdated?(listener: (tabId: number, change: { status?: string }) => void): void;
+  onRemoved?(listener: (tabId: number) => void): void;
 }
 export interface BrowserRuntime { storage: SettingsStorage; messaging: TypedMessaging; sidePanel: SidePanelCapability; tabs: TabCapability; }
 export function chromeRuntime(): BrowserRuntime {
@@ -69,7 +71,9 @@ export function chromeRuntime(): BrowserRuntime {
     tabs: {
       async active() {
         const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-        return tabs[0]?.id === undefined ? undefined : { id: tabs[0].id };
+        if (tabs[0]?.id !== undefined) return { id: tabs[0].id };
+        const fallback = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+        return fallback[0]?.id === undefined ? undefined : { id: fallback[0].id };
       },
       async current() {
         if (!browser?.tabs?.getCurrent) return undefined;
@@ -87,8 +91,15 @@ export function chromeRuntime(): BrowserRuntime {
           }
         });
       },
-      async send(tabId, message) { await browser.tabs.sendMessage(tabId, message); },
+      async send(tabId, message, target) {
+        if (target?.frameId === undefined) await browser.tabs.sendMessage(tabId, message);
+        else await browser.tabs.sendMessage(tabId, message, target);
+      },
       onActivated(listener) { browser.tabs.onActivated.addListener(({ tabId }) => listener(tabId)); },
+      onUpdated(listener) {
+        browser.tabs.onUpdated.addListener((tabId, change) => listener(tabId, { status: change.status }));
+      },
+      onRemoved(listener) { browser.tabs.onRemoved.addListener((tabId) => listener(tabId)); },
     },
   };
 }

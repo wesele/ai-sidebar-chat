@@ -44,14 +44,23 @@ export class ContentEditableAdapter implements EditorAdapter {
   }
 
   getRangeGeometry(textRange: TextRange): DOMRect[] {
+    return this.getRangesGeometry([textRange])[0] ?? [];
+  }
+
+  getRangesGeometry(ranges: TextRange[]): DOMRect[][] {
+    // Build the editor text model once and reuse it for every range instead
+    // of re-walking the whole editor DOM per issue (per-publish O(N) walks
+    // kept the CPU busy on long documents with many findings).
     const model = buildContenteditableTextModel(this.element);
-    const start = contentOffsetToDomPoint(model, textRange.start);
-    const end = contentOffsetToDomPoint(model, textRange.end);
-    if (!start || !end) return [];
-    const range = document.createRange();
-    range.setStart(start.node, start.offset);
-    range.setEnd(end.node, end.offset);
-    return Array.from(range.getClientRects(), (rect) => DOMRect.fromRect(rect));
+    return ranges.map((textRange) => {
+      const start = contentOffsetToDomPoint(model, textRange.start);
+      const end = contentOffsetToDomPoint(model, textRange.end);
+      if (!start || !end) return [];
+      const range = document.createRange();
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
+      return Array.from(range.getClientRects(), (rect) => DOMRect.fromRect(rect));
+    });
   }
 
   replaceRanges(replacements: Replacement[]): ApplyResult {

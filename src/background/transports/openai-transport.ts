@@ -335,7 +335,10 @@ export class OpenAITransport {
   }
 }
 
-function createDeadline(parent?: AbortSignal): {
+/** Shared request deadline: aborts hung requests after WRITING_REQUEST_TIMEOUT_MS.
+ *  Without this a stalled server leaves the analysis pending forever (the
+ *  status dot pulses indefinitely and the session never recovers). */
+export function createDeadline(parent?: AbortSignal): {
   signal: AbortSignal;
   timedOut: boolean;
   dispose: () => void;

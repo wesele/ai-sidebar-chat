@@ -52,10 +52,15 @@ export class AnnotationRenderer {
   private dot?: HTMLButtonElement;
   private measure?: HTMLDivElement;
   private pending = false;
+  private renderFrame?: number;
   private queuedRender?: { issues: Issue[]; rectFor: (issue: Issue) => DOMRect[] };
   private editorFontSize = 16;
   private replacementFontScale = LABEL_FONT_SCALE;
   private editorFontFamily = DEFAULT_LABEL_FONT_FAMILY;
+  /** Live annotation nodes keyed by issueId for reuse across renders. */
+  private marks = new Map<string, HTMLElement[]>();
+  /** Canvas fitPrefix results: text+width+font → char count. */
+  private fitCache = new Map<string, number>();
 
   constructor(
     private readonly onDot: () => void,
@@ -82,11 +87,11 @@ export class AnnotationRenderer {
        .paragraph{position:fixed;width:3px}
        .mark{font-family:var(--writing-label-font-family,${DEFAULT_LABEL_FONT_FAMILY});font-size:var(--writing-label-font-size,80%);line-height:${LABEL_LINE_HEIGHT};
          color:var(--writing-label-color,${DEFAULT_LABEL_COLOR});background:var(--writing-label-background,${DEFAULT_LABEL_BACKGROUND});border:0;border-radius:2px;padding:${LABEL_PADDING_PX}px;white-space:normal;overflow-wrap:anywhere;max-width:calc(100vw - 16px);box-sizing:border-box;transform:translateY(calc(-100% + 5px))}
-      .analyzing{box-shadow:0 0 0 0 rgba(16,185,129,.7);animation:wa-pulse 1.5s infinite}
+      .analyzing{animation:wa-pulse 1.5s infinite}
       @keyframes wa-pulse{
-        0%{transform:scale(.95);box-shadow:0 0 0 0 rgba(16,185,129,.7)}
-        70%{transform:scale(1);box-shadow:0 0 0 6px rgba(16,185,129,0)}
-        100%{transform:scale(.95);box-shadow:0 0 0 0 rgba(16,185,129,0)}
+        0%{transform:scale(.95);opacity:1}
+        70%{transform:scale(1.12);opacity:.65}
+        100%{transform:scale(.95);opacity:1}
       }
       @media(prefers-reduced-motion:reduce){.analyzing{animation:none}}
     `;
@@ -162,38 +167,67 @@ export class AnnotationRenderer {
     this.queuedRender = { issues, rectFor };
     if (this.pending) return;
     this.pending = true;
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
+      this.renderFrame = undefined;
       this.pending = false;
       if (!this.root) return;
       const render = this.queuedRender;
       if (!render) return;
-      this.root.querySelectorAll('.mark,.under,.paragraph').forEach((element) => element.remove());
+      // Diff against the live node set instead of destroy-all/recreate-all:
+      // analysis responses re-render on every batch while issue count grows,
+      // and full teardown churned DOM + click listeners per publish.
+      const keep = new Set<string>();
+      const nextNodes = new Map<string, HTMLElement[]>();
       for (const issue of render.issues) {
         const rects = render.rectFor(issue)
           .filter((rect) => rect.bottom >= -100 && rect.top <= innerHeight + 100);
-        if (issue.scope === 'local') {
-          this.renderLocalIssue(issue, rects);
+        keep.add(issue.issueId);
+        const existing = this.marks.get(issue.issueId);
+        const signature = rectsSignature(issue, rects);
+        if (existing && existing.length > 0 && existing[0].dataset.sig === signature) {
+          nextNodes.set(issue.issueId, existing);
           continue;
         }
-        for (const rect of rects) {
-          const node = document.createElement('i');
-          node.dataset.issueId = issue.issueId;
-          node.dataset.issueScope = issue.scope;
-          node.className = issue.scope === 'paragraph'
-            ? `paragraph ${issue.severity}`
-            : `under ${issue.severity}`;
-          const left = issue.scope === 'paragraph' ? rect.left - 8 : rect.left;
-          node.style.left = `${left}px`;
-          node.style.top = `${issue.scope === 'paragraph' ? rect.top : rect.bottom}px`;
-          node.style.width = `${issue.scope === 'paragraph' ? 3 : rect.width}px`;
-          node.style.height = `${issue.scope === 'paragraph' ? rect.height : UNDERLINE_HEIGHT}px`;
-          this.root.append(node);
+        if (existing) {
+          for (const node of existing) node.remove();
+        }
+        const created: HTMLElement[] = [];
+        if (issue.scope === 'local') {
+          this.renderLocalIssue(issue, rects, created);
+        } else {
+          for (const rect of rects) {
+            const node = document.createElement('i');
+            node.dataset.issueId = issue.issueId;
+            node.dataset.issueScope = issue.scope;
+            node.className = issue.scope === 'paragraph'
+              ? `paragraph ${issue.severity}`
+              : `under ${issue.severity}`;
+            const left = issue.scope === 'paragraph' ? rect.left - 8 : rect.left;
+            node.style.left = `${left}px`;
+            node.style.top = `${issue.scope === 'paragraph' ? rect.top : rect.bottom}px`;
+            node.style.width = `${issue.scope === 'paragraph' ? 3 : rect.width}px`;
+            node.style.height = `${issue.scope === 'paragraph' ? rect.height : UNDERLINE_HEIGHT}px`;
+            node.dataset.sig = signature;
+            this.root.append(node);
+            created.push(node);
+          }
+        }
+        for (const node of created) {
+          if (!node.dataset.sig) node.dataset.sig = signature;
+        }
+        if (created.length) nextNodes.set(issue.issueId, created);
+      }
+      for (const [issueId, nodes] of this.marks) {
+        if (!keep.has(issueId)) {
+          for (const node of nodes) node.remove();
         }
       }
+      this.marks = nextNodes;
     });
+    if (this.pending) this.renderFrame = frame;
   }
 
-  private renderLocalIssue(issue: Issue, rects: DOMRect[]): void {
+  private renderLocalIssue(issue: Issue, rects: DOMRect[], out: HTMLElement[]): void {
     if (!this.root || rects.length === 0) return;
     const labelFontSize = this.editorFontSize * this.replacementFontScale;
     const segments = splitAcrossRects(issue.replacement, rects, (text, width) =>
@@ -223,16 +257,72 @@ export class AnnotationRenderer {
       node.setAttribute('aria-label', `${segment}：${issue.reason}`);
       node.addEventListener('click', () => this.onIssue?.(issue.issueId));
       this.root.append(node);
+      out.push(node);
     }
   }
 
+  private canvasCtx?: CanvasRenderingContext2D | null;
+
+  private getCanvasContext(): CanvasRenderingContext2D | null {
+    if (this.canvasCtx !== undefined) return this.canvasCtx;
+    try {
+      const canvas = document.createElement('canvas');
+      // In jsdom without node-canvas, getContext returns null or throws
+      if (typeof canvas.getContext !== 'function') {
+        this.canvasCtx = null;
+        return null;
+      }
+      this.canvasCtx = canvas.getContext('2d');
+    } catch {
+      this.canvasCtx = null;
+    }
+    return this.canvasCtx;
+  }
+
   private fitPrefix(text: string, width: number, fontSize: number): number {
+    const ctx = this.getCanvasContext();
+    if (ctx) {
+      const cacheKey = `${fontSize}|${this.editorFontFamily}|${Math.round(width)}|${text}`;
+      const cached = this.fitCache.get(cacheKey);
+      if (cached !== undefined) return cached;
+      ctx.font = `${fontSize}px ${this.editorFontFamily}`;
+      // Usable content width discounting padding
+      const maxTextWidth = Math.max(0, width - LABEL_PADDING_PX * 2);
+      let result: number;
+      if (ctx.measureText(text).width <= maxTextWidth) {
+        result = text.length;
+      } else {
+        let low = 0;
+        let high = text.length;
+        while (low < high) {
+          const mid = Math.ceil((low + high) / 2);
+          const measured = ctx.measureText(text.slice(0, mid)).width;
+          if (measured <= maxTextWidth) low = mid;
+          else high = mid - 1;
+        }
+        result = Math.max(1, low);
+      }
+      if (this.fitCache.size > 512) this.fitCache.clear();
+      this.fitCache.set(cacheKey, result);
+      return result;
+    }
+
     const measure = this.ensureMeasure();
     measure.style.width = `${width}px`;
     measure.style.fontSize = `${fontSize}px`;
+    // Fast path: the whole replacement fits on one line — a single forced
+    // layout instead of ~log2(n) binary-search layouts per label segment.
+    // This is the common case and previously dominated annotation cost.
+    measure.textContent = text;
+    const whole = document.createRange();
+    whole.selectNodeContents(measure);
+    const wholeRects = typeof whole.getClientRects === 'function' ? whole.getClientRects() : undefined;
+    if (wholeRects === undefined || wholeRects.length <= 1) return text.length;
     let low = 0;
     let high = text.length;
-    while (low < high) {
+    // Binary search always converges, but cap iterations defensively so a
+    // degenerate layout (e.g. zero-width measure) can never spin forever.
+    for (let guard = 0; low < high && guard < 100; guard++) {
       const mid = Math.ceil((low + high) / 2);
       measure.textContent = text.slice(0, mid);
       const range = document.createRange();
@@ -254,7 +344,12 @@ export class AnnotationRenderer {
   }
 
   clear(): void {
+    if (this.renderFrame) cancelAnimationFrame(this.renderFrame);
+    this.renderFrame = undefined;
+    this.pending = false;
     this.queuedRender = undefined;
+    this.marks.clear();
+    this.fitCache.clear();
     this.measure?.remove();
     this.measure = undefined;
     this.host?.remove();
@@ -262,6 +357,14 @@ export class AnnotationRenderer {
     this.root = undefined;
     this.dot = undefined;
   }
+}
+
+/** Stable signature so unchanged issue geometry reuses existing nodes. */
+function rectsSignature(issue: Issue, rects: ReadonlyArray<DOMRect>): string {
+  const rectPart = rects
+    .map((rect) => `${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)},${Math.round(rect.height)}`)
+    .join(';');
+  return `${issue.scope}|${issue.severity}|${issue.original}|${issue.replacement}|${rectPart}`;
 }
 
 function validColor(value: string): boolean {

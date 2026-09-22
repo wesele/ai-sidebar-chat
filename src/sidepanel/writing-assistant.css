@@ -266,7 +266,6 @@ section[data-writing-settings] {
 .wa-status-dot.dot-green { background-color: #10b981; }
 .wa-status-dot.dot-pulse {
   background-color: #10b981;
-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
   animation: wa-pulse 1.5s infinite;
 }
 .wa-status-dot.dot-orange { background-color: #f97316; }
@@ -428,9 +427,9 @@ section[data-writing-settings] {
 }
 
 @keyframes wa-pulse {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0% { transform: scale(0.95); opacity: 1; }
+  70% { transform: scale(1.12); opacity: 0.65; }
+  100% { transform: scale(0.95); opacity: 1; }
 }
 
 /* Issue Counts section */
